@@ -182,26 +182,15 @@ class SsaArm64Gen extends SsaMachGen {
 	// Emit code for an integer binop
 	def emitIntBinop(code: int, i: SsaApplyOp) {
 		def width = getIntOpWidth(i);
-		emitSimpleBinop(code, width, i, ImmWidth.Imm12);
+		emitSimpleBinop(code, width, i);
 	}
 
 	// Emit code for a simple binop (add, sub, mul, etc...)
-	def emitSimpleBinop(code: int, width: int, i: SsaApplyOp, maxImmWidth: ImmWidth) {
+	def emitSimpleBinop(code: int, width: int, i: SsaApplyOp) {
 		// XXX: select better left operand using liveness
 		m.intbinop(i);
-		match (getImm32Operand(m.y, maxImmWidth)) {
-			Some(immOp) => {
-				def opcode = makeOpcode(code, AM_IMM, ARG_NONE, width);
-				emit3(opcode, dfnReg(i), use(m.x), op(immOp));
-			}
-			None => {
-				// if y is imm and too large to fit in binop, we use a
-				// const VReg. Regalloc later calls back `genMoveValLoc` to move
-				// y to reg.
-				def opcode = makeOpcode(code, AM_REG, ARG_NONE, width);
-				emit3(opcode, dfnReg(i), use(m.x), use(m.y));
-			}
-		}
+		def opcode = makeOpcode(code, AM_REG, ARG_NONE, width);
+		emit3(opcode, dfnReg(i), use(m.x), use(m.y));
 	}
 
 	// Returns the width for an integer operation
@@ -216,32 +205,5 @@ class SsaArm64Gen extends SsaMachGen {
 		else width = 64;
 
 		return if(width > 32, V_64, V_32);
-	}
-
-	// Returns Some(op) if i fits in an immediate operand with width <= maxWidth
-	// otherwise None
-	def getImm32Operand(i: SsaInstr, maxWidth: ImmWidth) -> Maybe<Operand> {
-		// null is 0 pointer
-		if (i == null) { return Maybe.Some(Operand.Immediate(Int.box(0))); }
-		// Can only use Imm32 if it is a constant
-		if (SsaConst.?(i)) {
-			def val = SsaConst.!(i).val;
-			match (val) {
-				null => { return Maybe.Some(Operand.Immediate(val)); } // Q: difference between useImm(null) and useInt(0)
-				x: Box<int> => {
-					// Check if x fits in maxWidth
-					match (maxWidth) {
-						Imm12 => if(x.val == i12.view(x.val)) return Maybe.Some(Operand.Immediate(x));
-						Imm16 => if(x.val == i16.view(x.val)) return Maybe.Some(Operand.Immediate(x));
-						Imm19 => if(x.val == i19.view(x.val)) return Maybe.Some(Operand.Immediate(x));
-					}
-				}
-				x: Box<long> => context.fail("not implemented");
-				x: Addr => context.fail("not implemented");
-				x: Box<bool> => context.fail("not implemented");
-				x: ArrayRangeStart => context.fail("not implemented"); // Q: what is this?
-			}
-		}
-		return Maybe.None;
 	}
 }
