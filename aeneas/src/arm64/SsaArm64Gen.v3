@@ -1,4 +1,4 @@
-// Arm64 instructions are ints that look like <variant><mode arg><mode><code>
+// Arm64 instructions are ints that look like <width><mode arg><mode><code>
 // where each part of the instruction is a byte
 
 // codes
@@ -22,9 +22,9 @@ def MASK_AM_ARG = 0xff0000;
 def SHIFT_AM_ARG: byte = 16;
 def ARG_NONE = 0x00;
 
-// variants (the width of the type the instruction operates on)
-def MASK_VARIANT = 0xff000000;
-def SHIFT_VARIANT: byte = 24;
+// widths (the width of the type the instruction operates on)
+def MASK_WIDTH = 0xff000000;
+def SHIFT_WIDTH: byte = 24;
 def V_32 = 0x00;
 def V_64 = 0x01;
 
@@ -42,8 +42,8 @@ type ImmWidth {
 }
 
 // Constructs an opcode from the 4 parts
-def makeOpcode(code: int, am: int, amArg: int, variant: int) -> int {
-	return code | (am << SHIFT_AM) | (amArg << SHIFT_AM_ARG) | (variant << SHIFT_VARIANT);
+def makeOpcode(code: int, am: int, amArg: int, width: int) -> int {
+	return code | (am << SHIFT_AM) | (amArg << SHIFT_AM_ARG) | (width << SHIFT_WIDTH);
 }
 
 // Extracts the code section of the opcode
@@ -76,22 +76,22 @@ def putAm(opcode: int, am: int) -> int {
 	return (am << SHIFT_AM) | opcode;
 }
 
-// Inserts the variant section of the opcode
-def getVariant(opcode: int) -> int {
-	return (opcode & MASK_VARIANT) >> SHIFT_VARIANT;
+// Inserts the width section of the opcode
+def getWidth(opcode: int) -> int {
+	return (opcode & MASK_WIDTH) >> SHIFT_WIDTH;
 }
 
-// Extracts the variant section of the opcode
-def putVariant(opcode: int, variant: int) -> int {
-	return (variant << SHIFT_VARIANT) | opcode;
+// Extracts the width section of the opcode
+def putWidth(opcode: int, width: int) -> int {
+	return (width << SHIFT_WIDTH) | opcode;
 }
 
-// Inserts the variant section of the opcode according to the register class
+// Inserts the width section of the opcode according to the register class
 // of the operands
-def putRegClassVariant(opcode: int, rc: RegClass) -> int {
+def putRegClassWidth(opcode: int, rc: RegClass) -> int {
 	match (rc) {
-		I32, F32 => return (V_32 << SHIFT_VARIANT) | opcode;
-		_ => return (V_64 << SHIFT_VARIANT) | opcode;
+		I32, F32 => return (V_32 << SHIFT_WIDTH) | opcode;
+		_ => return (V_64 << SHIFT_WIDTH) | opcode;
 	}
 }
 
@@ -139,7 +139,7 @@ class SsaArm64Gen extends SsaMachGen {
 			match (operand) {
 				Some(immOp) => {
 					// Move constant directly to stack
-					emit2(putRegClassVariant(I_MOV, regClass), dfnv(dst), op(immOp));
+					emit2(putRegClassWidth(I_MOV, regClass), dfnv(dst), op(immOp));
 				}
 				None => {
 					// Too large constant or mem loc, either way need scratch
@@ -153,7 +153,7 @@ class SsaArm64Gen extends SsaMachGen {
 		match (operand) {
 			Some(immOp) => {
 				// Move constant directly to reg
-				emit2(putRegClassVariant(I_MOV, regClass), dfnv(dst), op(immOp));
+				emit2(putRegClassWidth(I_MOV, regClass), dfnv(dst), op(immOp));
 			}
 			None => {
 				// Constant too large
@@ -162,11 +162,11 @@ class SsaArm64Gen extends SsaMachGen {
 					x: Box<int> => {
 						if (x.val == i16.view(x.val)) {
 							// Arm64 mov supports 16-bit immediates
-							emit2(putVariant(I_MOV, V_32), dfnv(null, Regs.SCRATCH_GPR), useImm(val));
+							emit2(putWidth(I_MOV, V_32), dfnv(null, Regs.SCRATCH_GPR), useImm(val));
 						} else {
 							// mov followed by movk to insert imm in reg
 							// move first 16-bits to reg
-							emit2(putVariant(I_MOV, V_32), dfnv(null, Regs.SCRATCH_GPR), useImm(Int.box(x.val & 0xffff)));
+							emit2(putWidth(I_MOV, V_32), dfnv(null, Regs.SCRATCH_GPR), useImm(Int.box(x.val & 0xffff)));
 							// Move second 16-bits to reg
 							def opcode = makeOpcode(I_MOVK, AM_SHIFTED_IMM, 16, V_32);
 							emit2(opcode, dfnv(null, Regs.SCRATCH_GPR), useImm(Int.box((x.val & 0xffff0000) >> 16)));
@@ -181,31 +181,31 @@ class SsaArm64Gen extends SsaMachGen {
 	// Helper functions
 	// Emit code for an integer binop
 	def emitIntBinop(code: int, i: SsaApplyOp) {
-		def variant = getIntOpVariant(i);
-		emitSimpleBinop(code, variant, i, ImmWidth.Imm12);
+		def width = getIntOpWidth(i);
+		emitSimpleBinop(code, width, i, ImmWidth.Imm12);
 	}
 
 	// Emit code for a simple binop (add, sub, mul, etc...)
-	def emitSimpleBinop(code: int, variant: int, i: SsaApplyOp, maxImmWidth: ImmWidth) {
+	def emitSimpleBinop(code: int, width: int, i: SsaApplyOp, maxImmWidth: ImmWidth) {
 		// XXX: select better left operand using liveness
 		m.intbinop(i);
 		match (getImm32Operand(m.y, maxImmWidth)) {
 			Some(immOp) => {
-				def opcode = makeOpcode(code, AM_IMM, ARG_NONE, variant);
+				def opcode = makeOpcode(code, AM_IMM, ARG_NONE, width);
 				emit3(opcode, dfnReg(i), use(m.x), op(immOp));
 			}
 			None => {
 				// if y is imm and too large to fit in binop, we use a
 				// const VReg. Regalloc later calls back `genMoveValLoc` to move
 				// y to reg.
-				def opcode = makeOpcode(code, AM_REG, ARG_NONE, variant);
+				def opcode = makeOpcode(code, AM_REG, ARG_NONE, width);
 				emit3(opcode, dfnReg(i), use(m.x), use(m.y));
 			}
 		}
 	}
 
-	// Returns the variant for an integer operation
-	def getIntOpVariant(i: SsaApplyOp) -> int {
+	// Returns the width for an integer operation
+	def getIntOpWidth(i: SsaApplyOp) -> int {
 		// XXX: factor this out and clean it up
 		def t = i.op.typeArgs[0];
 		var width: int;
