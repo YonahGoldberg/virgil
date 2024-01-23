@@ -48,42 +48,42 @@ def makeOpcode(code: int, am: int, amArg: int, variant: int) -> int {
 
 // Extracts the code section of the opcode
 def getCode(opcode: int) -> int {
-    return opcode & MASK_CODE;
+	return opcode & MASK_CODE;
 }
 
 // Inserts the code section of the opcode
 def putOpcode(opcode: int, code: int) -> int {
-    return opcode | code;
+	return opcode | code;
 }
 
 // Extracts the addressing mode argument section of the opcode
 def getAmArg(opcode: int) -> int {
-    return (opcode & MASK_AM_ARG) >> SHIFT_AM_ARG;
+	return (opcode & MASK_AM_ARG) >> SHIFT_AM_ARG;
 }
 
 // Inserts the addressing mode argument section of the opcode
 def putAmArg(opcode: int, arg: int) -> int {
-    return (arg << SHIFT_AM_ARG) | opcode;
+	return (arg << SHIFT_AM_ARG) | opcode;
 }
 
 // Extracts the addressing mode section of the opcode
 def getAm(opcode: int) -> int {
-    return (opcode & MASK_AM) >> SHIFT_AM;
+	return (opcode & MASK_AM) >> SHIFT_AM;
 }
 
 // Inserts the addressing mode section of the opcode
 def putAm(opcode: int, am: int) -> int {
-    return (am << SHIFT_AM) | opcode;
+	return (am << SHIFT_AM) | opcode;
 }
 
 // Inserts the variant section of the opcode
 def getVariant(opcode: int) -> int {
-    return (opcode & MASK_VARIANT) >> SHIFT_VARIANT;
+	return (opcode & MASK_VARIANT) >> SHIFT_VARIANT;
 }
 
 // Extracts the variant section of the opcode
 def putVariant(opcode: int, variant: int) -> int {
-    return (variant << SHIFT_VARIANT) | opcode;
+	return (variant << SHIFT_VARIANT) | opcode;
 }
 
 // Inserts the variant section of the opcode according to the register class
@@ -104,31 +104,31 @@ class SsaArm64Gen extends SsaMachGen {
 	def m = SsaInstrMatcher.new();
 	def dwarf: Dwarf; // What is this?
 
-    new(context: SsaContext, mach: MachProgram, asm, w: MachDataWriter, dwarf)
-        super(context, mach, Arm64RegSet.SET, w) {}
+	new(context: SsaContext, mach: MachProgram, asm, w: MachDataWriter, dwarf)
+	super(context, mach, Arm64RegSet.SET, w) {}
 
-    // Overidden Architecture Specific Routines
-    def visitApply(block: SsaBlock, i: SsaApplyOp) {
-        match (i.op.opcode) {
-            IntAdd => {
-                emitIntBinop(I_ADD, i);
-            }
+	// Overidden Architecture Specific Routines
+	def visitApply(block: SsaBlock, i: SsaApplyOp) {
+		match (i.op.opcode) {
+			IntAdd => {
+				emitIntBinop(I_ADD, i);
+			}
 			_ => context.fail("not implemented"); // TODO
-        }
-    }
+		}
+	}
 
 	def visitThrow(block: SsaBlock, i: SsaThrow) { context.fail("not implemented"); }
 	def visitIf(block: SsaBlock, i: SsaIf) { context.fail("not implemented"); }
 	def visitSwitch(block: SsaBlock, i: SsaSwitch) { context.fail("not implemented"); }
 	def visitGoto(block: SsaBlock, target: SsaGoto) { context.fail("not implemented"); }
 
-    // Override Code Generation
+	// Override Code Generation
 	def assemble(opcode: int, x: Array<Operand>) {
 		context.fail("not implemented");
 	}
 
-    // Regalloc callbacks to add moves
-    def genSaveLocal(reg: int, v: VReg) { context.fail("not implemented"); }
+	// Regalloc callbacks to add moves
+	def genSaveLocal(reg: int, v: VReg) { context.fail("not implemented"); }
 	def genRestoreLocal(v: VReg, reg: int) { context.fail("not implemented"); }
 	def genMoveLocLoc(src: (VReg, int), dst: (VReg, int), regClass: RegClass) { context.fail("not implemented"); }
 
@@ -147,48 +147,48 @@ class SsaArm64Gen extends SsaMachGen {
 					genMoveLocLoc((null, Regs.SCRATCH_GPR), dst, regClass);
 				}
 			}
-		} else {
-            // TODO dst can be an xmm
-            match (operand) {
-                Some(immOp) => {
-                    // Move constant directly to reg
-                    emit2(putRegClassVariant(I_MOV, regClass), dfnv(dst), op(immOp));
-                }
-                None => {
-                    // Constant too large
-                    def val = SsaConst.!(src.ssa).val;
-                    match (val) {
-                        x: Box<int> => {
-                            if (x.val == i16.view(x.val)) {
-                                // Arm64 mov supports 16-bit immediates
-                                emit2(putVariant(I_MOV, V_32), dfnv(null, Regs.SCRATCH_GPR), useImm(val));
-                            } else {
-                                // mov followed by movk to insert imm in reg
-                                // move first 16-bits to reg
-                                emit2(putVariant(I_MOV, V_32), dfnv(null, Regs.SCRATCH_GPR), useImm(Int.box(x.val & 0xffff)));
-                                // Move second 16-bits to reg
-                                def opcode = makeOpcode(I_MOVK, AM_SHIFTED_IMM, 16, V_32);
-                                emit2(opcode, dfnv(null, Regs.SCRATCH_GPR), useImm(Int.box((x.val & 0xffff0000) >> 16)));
-                            }
-                        }
-                        _ => context.fail("not implemented"); // TODO
-                    }
-                }
-            }
+			return;
+		}
+		// TODO dst can be an xmm
+		match (operand) {
+			Some(immOp) => {
+				// Move constant directly to reg
+				emit2(putRegClassVariant(I_MOV, regClass), dfnv(dst), op(immOp));
+			}
+			None => {
+				// Constant too large
+				def val = SsaConst.!(src.ssa).val;
+				match (val) {
+					x: Box<int> => {
+						if (x.val == i16.view(x.val)) {
+							// Arm64 mov supports 16-bit immediates
+							emit2(putVariant(I_MOV, V_32), dfnv(null, Regs.SCRATCH_GPR), useImm(val));
+						} else {
+							// mov followed by movk to insert imm in reg
+							// move first 16-bits to reg
+							emit2(putVariant(I_MOV, V_32), dfnv(null, Regs.SCRATCH_GPR), useImm(Int.box(x.val & 0xffff)));
+							// Move second 16-bits to reg
+							def opcode = makeOpcode(I_MOVK, AM_SHIFTED_IMM, 16, V_32);
+							emit2(opcode, dfnv(null, Regs.SCRATCH_GPR), useImm(Int.box((x.val & 0xffff0000) >> 16)));
+						}
+					}
+					_ => context.fail("not implemented"); // TODO
+				}
+			}
 		}
 	}
 
-    // Helper functions
-    // Emit code for an integer binop
-    def emitIntBinop(code: int, i: SsaApplyOp) {
-        def variant = getIntOpVariant(i);
+	// Helper functions
+	// Emit code for an integer binop
+	def emitIntBinop(code: int, i: SsaApplyOp) {
+		def variant = getIntOpVariant(i);
 		emitSimpleBinop(code, variant, i, ImmWidth.Imm12);
 	}
 
 	// Emit code for a simple binop (add, sub, mul, etc...)
-    def emitSimpleBinop(code: int, variant: int, i: SsaApplyOp, maxImmWidth: ImmWidth) {
+	def emitSimpleBinop(code: int, variant: int, i: SsaApplyOp, maxImmWidth: ImmWidth) {
 		// XXX: select better left operand using liveness
-        m.intbinop(i);
+		m.intbinop(i);
 		match (getImm32Operand(m.y, maxImmWidth)) {
 			Some(immOp) => {
 				def opcode = makeOpcode(code, AM_IMM, ARG_NONE, variant);
@@ -208,22 +208,22 @@ class SsaArm64Gen extends SsaMachGen {
 	def getIntOpVariant(i: SsaApplyOp) -> int {
 		// XXX: factor this out and clean it up
 		def t = i.op.typeArgs[0];
-        var width: int;
+		var width: int;
 
 		if (IntType.?(t)) width = IntType.!(t).width;
 		else if (t.typeCon.kind == V3Kind.ENUM) width = V3.getVariantTagType(t).width;
 		else if (t.typeCon.kind == V3Kind.ENUM_SET) width = V3.getEnumSetType(t).width;
-        else width = 64;
+		else width = 64;
 
-        return if(width > 32, V_64, V_32);
+		return if(width > 32, V_64, V_32);
 	}
 
 	// Returns Some(op) if i fits in an immediate operand with width <= maxWidth
 	// otherwise None
-    def getImm32Operand(i: SsaInstr, maxWidth: ImmWidth) -> Maybe<Operand> {
-        // null is 0 pointer
+	def getImm32Operand(i: SsaInstr, maxWidth: ImmWidth) -> Maybe<Operand> {
+		// null is 0 pointer
 		if (i == null) { return Maybe.Some(Operand.Immediate(Int.box(0))); }
-        // Can only use Imm32 if it is a constant
+		// Can only use Imm32 if it is a constant
 		if (SsaConst.?(i)) {
 			def val = SsaConst.!(i).val;
 			match (val) {
