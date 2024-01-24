@@ -178,7 +178,7 @@ class SsaArm64Gen extends SsaMachGen {
 					def opcode2 = makeOpcode(I_MOVK, AM_SHIFTED_IMM, 16, W_32);
 					emit2(opcode2, op(Operand.Def(dst)), useImm(Int.box((x.val & 0xffff0000) >> 16)));
 				}
-					_ => context.fail("not implemented"); // TODO
+				_ => context.fail("not implemented"); // TODO
 			}
 		}
 	}
