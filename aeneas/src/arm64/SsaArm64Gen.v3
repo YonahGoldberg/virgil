@@ -4,8 +4,10 @@
 // codes
 def MASK_CODE = 0xff;
 def I_ADD = 0x00;
-def I_MOV = 0x01;
+def I_MOVZ = 0x01;
 def I_MOVK = 0x02;
+def I_LDR = 0x03;
+def I_STR = 0x04;
 
 // addressing modes
 def MASK_AM = 0xff00;
@@ -25,8 +27,12 @@ def ARG_NONE = 0x00;
 // widths (the width of the type the instruction operates on)
 def MASK_WIDTH = 0xff000000;
 def SHIFT_WIDTH: byte = 24;
-def V_32 = 0x00;
-def V_64 = 0x01;
+def W_32 = 0x00;
+def W_64 = 0x01;
+
+// useful constants
+def MAX_IMM16_MOV = 0xffff;
+def MIN_IMM16_MOV = 0xffff0000;
 
 // XXX: Add to utils?
 type Maybe<T> {
@@ -86,12 +92,11 @@ def putWidth(opcode: int, width: int) -> int {
 	return (width << SHIFT_WIDTH) | opcode;
 }
 
-// Inserts the width section of the opcode according to the register class
-// of the operands
-def putRegClassWidth(opcode: int, rc: RegClass) -> int {
+// Gets width of instruction corresponding to RegClass
+def getRegClassWidth(rc: RegClass) -> int {
 	match (rc) {
-		I32, F32 => return (V_32 << SHIFT_WIDTH) | opcode;
-		_ => return (V_64 << SHIFT_WIDTH) | opcode;
+		I32, F32 => return W_32;
+		_ => return W_64;
 	}
 }
 
@@ -130,50 +135,50 @@ class SsaArm64Gen extends SsaMachGen {
 	// Regalloc callbacks to add moves
 	def genSaveLocal(reg: int, v: VReg) { context.fail("not implemented"); }
 	def genRestoreLocal(v: VReg, reg: int) { context.fail("not implemented"); }
-	def genMoveLocLoc(src: (VReg, int), dst: (VReg, int), regClass: RegClass) { context.fail("not implemented"); }
+
+	def genMoveLocLoc(src: (VReg, int), dst: (VReg, int), regClass: RegClass) {
+		def width = getRegClassWidth(regClass);
+		def dstStack = regSet.isStack(dst.1), srcStack = regSet.isStack(src.1);
+
+		if (dstStack && srcStack) {
+			def opcode1 = makeOpcode(I_LDR, AM_REG, ARG_NONE, width);
+			emit2(opcode1, op(Operand.Def(null, Regs.SCRATCH_GPR)), op(Operand.Use(src)));	
+			def opcode2 = makeOpcode(I_STR, AM_REG, ARG_NONE, width);
+			emit2(opcode1, op(Operand.Def(dst)), op(Operand.Use(null, Regs.SCRATCH_GPR)));	
+		} else if (dstStack && !srcStack) {
+			def opcode = makeOpcode(I_STR, AM_REG, ARG_NONE, width);
+			emit2(opcode, op(Operand.Def(dst)), op(Operand.Use(src)));
+		} else if (!dstStack && srcStack) {
+			def opcode = makeOpcode(I_LDR, AM_REG, ARG_NONE, width);
+			emit2(opcode, op(Operand.Def(dst)), op(Operand.Use(src)));
+		} else {
+			def opcode = makeOpcode(I_MOVZ, AM_REG, ARG_NONE, width);
+			emit2(opcode, op(Operand.Def(dst)), op(Operand.Use(src)));
+		}
+	}
 
 	// Register allocation callback to prepend a move
 	def genMoveValLoc(src: VReg, dst: (VReg, int), regClass: RegClass) {
-		def operand = getImm32Operand(src.ssa, ImmWidth.Imm16);
+		def width = getRegClassWidth(regClass);
+
 		if (regSet.isStack(dst.1)) {
-			match (operand) {
-				Some(immOp) => {
-					// Move constant directly to stack
-					emit2(putRegClassWidth(I_MOV, regClass), dfnv(dst), op(immOp));
+			// Only registers can be stored to memory
+			genMoveValLoc(src, (null, Regs.SCRATCH_GPR), regClass);
+			def opcode = makeOpcode(I_STR, AM_REG, ARG_NONE, width);
+			emit2(opcode, op(Operand.Def(dst)), op(Operand.Use(null, Regs.SCRATCH_GPR)));
+		} else {
+			def val = SsaConst.!(src.ssa).val;
+			match (val) {
+				x: Box<int> => {
+					// XXX Optimize
+					// Move first 16-bits to reg
+					def opcode1 = makeOpcode(I_MOVZ, AM_REG, ARG_NONE, W_32);
+					emit2(opcode1, op(Operand.Def(dst)), useImm(Int.box(x.val & 0xffff)));
+					// Move second 16-bits to reg
+					def opcode2 = makeOpcode(I_MOVK, AM_SHIFTED_IMM, 16, W_32);
+					emit2(opcode2, op(Operand.Def(dst)), useImm(Int.box((x.val & 0xffff0000) >> 16)));
 				}
-				None => {
-					// Too large constant or mem loc, either way need scratch
-					genMoveValLoc(src, (null, Regs.SCRATCH_GPR), regClass);
-					genMoveLocLoc((null, Regs.SCRATCH_GPR), dst, regClass);
-				}
-			}
-			return;
-		}
-		// TODO dst can be an xmm
-		match (operand) {
-			Some(immOp) => {
-				// Move constant directly to reg
-				emit2(putRegClassWidth(I_MOV, regClass), dfnv(dst), op(immOp));
-			}
-			None => {
-				// Constant too large
-				def val = SsaConst.!(src.ssa).val;
-				match (val) {
-					x: Box<int> => {
-						if (x.val == i16.view(x.val)) {
-							// Arm64 mov supports 16-bit immediates
-							emit2(putWidth(I_MOV, V_32), dfnv(null, Regs.SCRATCH_GPR), useImm(val));
-						} else {
-							// mov followed by movk to insert imm in reg
-							// move first 16-bits to reg
-							emit2(putWidth(I_MOV, V_32), dfnv(null, Regs.SCRATCH_GPR), useImm(Int.box(x.val & 0xffff)));
-							// Move second 16-bits to reg
-							def opcode = makeOpcode(I_MOVK, AM_SHIFTED_IMM, 16, V_32);
-							emit2(opcode, dfnv(null, Regs.SCRATCH_GPR), useImm(Int.box((x.val & 0xffff0000) >> 16)));
-						}
-					}
 					_ => context.fail("not implemented"); // TODO
-				}
 			}
 		}
 	}
@@ -204,6 +209,6 @@ class SsaArm64Gen extends SsaMachGen {
 		else if (t.typeCon.kind == V3Kind.ENUM_SET) width = V3.getEnumSetType(t).width;
 		else width = 64;
 
-		return if(width > 32, V_64, V_32);
+		return if(width > 32, W_64, W_32);
 	}
 }
