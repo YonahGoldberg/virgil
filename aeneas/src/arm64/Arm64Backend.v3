@@ -53,12 +53,17 @@ class Arm64Backend extends MachBackend {
 		asm = Arm64MacroAssembler.new();
 		if (ri_gc != null) {
 			// call the RiRuntime.gc() method
-			mach.fail("not implemented");
+			def frame = computeFrameSize(getFrame(ri_gc.ssa)), conv = frame.conv;
+			objReg = Regs.toGpr(conv.calleeRet(0));
+			sizeReg = Regs.toGpr(conv.calleeParam(1));
+			ipReg = Regs.toGpr(conv.calleeParam(2));
+			spReg = Regs.toGpr(conv.calleeParam(3));
 		} else {
 			// there is no appropriate RiRuntime.gc() method
 			objReg = Arm64Regs.R0;
 			sizeReg = Arm64Regs.R0;
 		}
+
 		codegen = SsaArm64Gen.new(context, mach, asm, w, dwarf);
 		if (compiler.useGlobalRegAllocMatcher != VstMatcher.None) allocateRegsGlobal = GlobalRegAlloc.new(Regs.SET, codegen).allocate;
 		if (compiler.LocalRegAlloc) allocateRegs = LocalRegAlloc.new(Regs.SET, codegen).allocate;
@@ -68,7 +73,27 @@ class Arm64Backend extends MachBackend {
 	// Override MachBackend	
 
 	def genEntryStub() {
-		mach.fail("not implemented");
+		def main = prog.getMain().asMethod();
+		def frame = getFrame(main.ssa);
+
+		// switch to compiler-provided stack before initializing the runtime
+		if (CLOptions.STACK_SIZE.get() > 0) {
+			def stackEnd = ref(CiRuntimeModule.STACK_END);
+			asm.lea(Arm64Regs.RSP, stackEnd);
+		}
+
+		// initialize runtime if necessary
+		genMainInit(frame);
+
+		// TODO: CLOptions Stack Size
+
+		// call main
+		asm.callr_v3(mach.addrOfMethod(main));
+		// write return value to stdout if this is a test
+		if (test) genTestOutput(main, frame);
+		// exit with the return value of main
+		if (main.sig.returnTypes.length > 0) asm_exit_r(loc_gpr(frame, frame.conv.callerRet(0)));
+		else return asm_exit_code(0);
 	}
 
 	def genAllocStub() {
@@ -96,4 +121,79 @@ class Arm64Backend extends MachBackend {
 	def asm_exit_r(r: X86_64Gpr);
 	def asm_exit_code(code: int);
 	def genTestOutput(main: IrMethod, frame: MachFrame);
+
+	// Helper functions
+
+	// Returns call frame for an SsaGraph
+	def getFrame(ssa: SsaGraph) -> MachFrame {
+		return MachFrame.new(Arm64VirgilCallConv.getForGraph(mach, ssa), mach.data.addrAlign, mach.refSize);
+	}
+
+	// Adds Arm64 specific frame size to MachFrame
+	// XXX 64 -bits for ever local, optimize?. Addition for return address?
+	def computeFrameSize(frame: MachFrame) -> MachFrame {
+		frame.frameSize = mach.alignTo(frame.slots() * mach.refSize + mach.code.addressSize, mach.stackAlign);
+		return frame;
+	}
+
+	def ref(addr: Addr) -> Arm64AddrRef {
+		return Arm64AddrRef.new(null, null, 0, addr, false);
+	}
+
+	def genMainInit(frame: MachFrame) {
+		// call RiRuntime.init() if it exists
+		// if (mach.runtime.ri_init >= 0) return genRiInit(frame);
+		// if this is a test, install custom signal handlers
+		// if (test) return genSigInstalls();
+		// TODO: remove compiler-generated initialization of args
+		if (frame.conv.paramTypes.length <= 1) return; // don't bother, main doesn't use it
+		// initialize arg array from OS-supplied argv and envp
+		def argc = Arm64Regs.R0, argp = Arm64Regs.R0, argArray = Arm64Regs.R0; // TODO FILL IN
+		def arrayType = V3Array.newType(mach.machType(V3.stringType));
+
+		asm.movq_r_m(argc, X86_64Regs.RSP.indirect());
+		asm.sub_r_i(argc, 1); // adjust for first arg
+		asmArrayAlloc(arrayType, argArray, argc);
+		asm.pushq_r(argArray); // save array on stack
+
+		asm.lea(argArray, argArray.plus(mach.getArrayElemOffset(arrayType, 0)));
+		asm.lea(argp, X86_64Regs.RSP.plus(3 * mach.data.addressSize));
+
+		// loop over individual arguments
+		var loopStart = asm.pos();
+		var str = X86_64Regs.RDI, strlen = X86_64Regs.RCX;
+
+		// load the argument and test against null
+		asm.movq_r_m(str, argp.indirect());
+		asm.cmp_r_i(str, 0);
+		asm.jc_rel(X86_64Conds.Z, 0);
+		var cmpPatch = asm.pos() - 1;
+
+		// compute length of string by finding null byte
+		asm.movq_r_i(strlen, -1);
+		asm.repne().scasb(); // updates RDI and RCX, kills RAX
+		asm.not_r(strlen);
+		asm.dec_r(strlen);
+
+		// allocate a byte array of length strlen
+		var argString = X86_64Regs.RDI;
+		asmArrayAlloc(V3.stringType, argString, strlen);
+		asm.movq_m_r(argArray.indirect(), argString); // write into arg array
+
+		// copy data into array
+		asm.lea(X86_64Regs.RDI, argString.plus(mach.getArrayElemOffset(V3.stringType, 0)));
+		asm.movq_r_m(X86_64Regs.RSI, argp.indirect());
+		asm.repne().movsb();
+
+		// increment argp and argarray position
+		asm.add_r_i(argArray, 4);
+		asm.add_r_i(argp, 4);
+		var offset = loopStart - asm.pos();
+		asm.jmp_rel(offset); // loop back to start
+
+		var offset2 = asm.pos() - cmpPatch - 1;
+		asm.w.at(cmpPatch).putb(offset2); // patch the branch that skips the loop
+		asm.w.atEnd();
+		asm.popq_r(loc_gpr(frame, frame.conv.callerParam(1)));
+	}
 }

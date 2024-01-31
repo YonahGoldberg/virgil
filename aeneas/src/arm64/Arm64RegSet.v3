@@ -93,6 +93,11 @@ component Arm64RegSet {
 		for (t in v) result[t.0.tag] = t.1;
 		return result;
 	}
+
+	def toGpr(loc: int) -> Arm64IntReg {
+		def rel = loc - RAX;
+		return if(u32.view(rel) < locToGprArr.length, locToGprArr[rel]);
+	}
 }
 
 // Defines the standard parameter and return registers for Arm64 calls between Virgil methods.
