@@ -149,7 +149,7 @@ class Arm64Assembler(w: DataWriter) {
 		emit_r_r_r(0x1AC00C00 | width.mask(), rd, rn, rm);
 	}
 
-	def emit_r_r_op(opcode: u8, rd: Arm64Reg, rn: Arm64Reg, op: Arm64Operand) {
+	private def emit_r_r_op(opcode: u8, rd: Arm64Reg, rn: Arm64Reg, op: Arm64Operand) {
 		var sh: = 0;
 		var imm = 0;
 		var reg = 0;
@@ -167,12 +167,12 @@ class Arm64Assembler(w: DataWriter) {
 		emit((int.view(opcode) << 23) | (int.view(rn.id) << 4) | op_mask);
 	}
 
-	def emit_r_r_r(opcode: u32, rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) {
+	private def emit_r_r_r(opcode: u32, rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) {
 		emit(int.view(opcode) | int.view(rd.id) |
 			(int.view(rn.id) << 4) | (int.view(rm.id) << 15));
 	}
 
-	def emit(val: int) {
+	private def emit(val: int) {
 		w.put_b32(val);
 	}
 }
