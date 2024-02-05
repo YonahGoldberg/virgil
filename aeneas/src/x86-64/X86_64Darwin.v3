@@ -54,6 +54,7 @@ class X86_64DarwinTarget extends Target {
 	private def getRuntime(prog: Program) -> MachRuntime {
 		return MachProgram.!(prog.tprog).runtime;
 	}
+
 	def emit(compiler: Compiler, prog: Program) {
 		var rt = getRuntime(prog), mach = rt.mach;
 		mach.build(compiler, X86_64Common.LOWERING);

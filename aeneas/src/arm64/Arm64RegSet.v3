@@ -15,7 +15,7 @@ component Arm64RegSet {
 	private def allocatableGprs = Array<byte>.new(gprCount - 2);
 	private def sfrs = Array<byte>.new(sfrCount); // TODO SIMD + floating point registers
 	// map from a "loc" to a gpr
-	private def locToGprArr = Array<Arm64IntReg>.new(gprCount + 1);
+	private def locToGprArr = Array<Arm64Gpr>.new(gprCount + 1);
 	private def locToSfrArr = Array<Arm64Sfr>.new(sfrCount + 1); // TODO
 
 	// physical registers start at 1, see class MachRegSet
@@ -68,7 +68,7 @@ component Arm64RegSet {
 		CALLER_SPILL_START, CALLEE_SPILL_START);
 
 	// Creats a new general purpose register, returns unique identifier
-	private def gpr(name: string, r: Arm64IntReg, allocatable: bool) -> byte {
+	private def gpr(name: string, r: Arm64Gpr, allocatable: bool) -> byte {
 		def loc = byte.view(cursor++), i = loc - gprStart;
 		locToGprArr[loc] = r;
 		if (allocatable) allocatableGprs[i] = loc;
@@ -94,8 +94,8 @@ component Arm64RegSet {
 		return result;
 	}
 
-	def toGpr(loc: int) -> Arm64IntReg {
-		def rel = loc - RAX;
+	def toGpr(loc: int) -> Arm64Gpr {
+		def rel = loc - R0;
 		return if(u32.view(rel) < locToGprArr.length, locToGprArr[rel]);
 	}
 }

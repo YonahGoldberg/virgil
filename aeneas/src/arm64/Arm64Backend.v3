@@ -6,6 +6,29 @@ component Arm64Targets {
 	}
 }
 
+component Arm64Common {
+	def LOWERING = makeMachLoweringConfig();
+	def makeMachLoweringConfig() -> MachLoweringConfig {
+		var config = MachLoweringConfig.new();
+		config.Int32Arith = true;
+		config.Int64Arith = true;
+		config.ExplicitDivChecks = true;
+		config.ExplicitModChecks = true;
+		config.IntConvertFUnsigned = false; // no unsigned conversions until AVX?
+		config.IntConvertFMapsNanToZero = false; // cvts{s,d}2si maps NaN to int.min
+		config.IntConvertFPosSaturates = false; // cvts{s,d}2si returns int.min
+		config.FloatConvertIUnsigned = false; // cvts{s,d}2si returns int.min
+		return config;
+	}
+
+	def KERNEL_PARAM_REGS: Array<Arm64Reg> = [];
+
+	def KERNEL_RETURN_REGS: Array<Arm64Reg> = [];
+
+	def SPACE = AddressSpace.new("mem", false, 64, 8,
+		Alignment.new(4096), Alignment.new(8));
+}
+
 def Regs: Arm64RegSet;
 
 class Arm64Target extends Target {
@@ -17,18 +40,134 @@ class Arm64Target extends Target {
 	def configureCompiler(compiler: Compiler) {}
 
 	def configureProgram(prog: Program) {
-		prog.ERROR.fail("not implemented");
+		def space = Arm64Common.SPACE;
+		def intNorm = IntNormalizers.I64LE;
+		var mach = MachProgram.new(prog, space, space, intNorm);
+		prog.tprog = mach;
+		var rt = MachRuntime.new(mach);
+		mach.runtime = rt;
+		MachModule.install(prog, mach); // installs "Pointer" typecon
+		DarwinModule.install(prog, true); // installs "Darwin" component
+		prog.typeEnv.add(rt.typeCon); // installs "CiRuntime" component (for RiRuntime code)
 	}
 
 	def computeFieldOffsets(prog: Program, b: Vector<IrField>, start: int) {
-		prog.ERROR.fail("not implemented");
+		getRuntime(prog).mach.computeFieldOffsets(prog, b, start);
 	}
 	def addRoots(compiler: Compiler, prog: Program) {
-		prog.ERROR.fail("not implemented");
+		getRuntime(prog).addRoots();
 	}
 
 	def emit(compiler: Compiler, prog: Program) {
-		prog.ERROR.fail("not implemented");
+		var rt = getRuntime(prog), mach = rt.mach;
+		mach.build(compiler, Arm64Common.LOWERING);
+
+		var header = MachO_Header.new(true);
+		var pageAlign = rt.codeRegion.space.pageAlign;
+		header.cputype = MachO.CPU_TYPE_X86_64;
+		header.cpusubtype = MachO.CPU_SUBTYPE_X86_64;
+		header.filetype = MachO.MH_EXECUTE;
+
+		var startAddr = int.view(CLOptions.VM_START_ADDR.get());
+		if (startAddr == 0) startAddr = DEFAULT_VADDR_START;
+		// protect page zero for trapping null accesses
+		var pz = newSegmentLoad(header, "__NULL", 0);
+		pz.vmsize = pageAlign.size;
+		// stack (data) segment if a non-zero stack size is specified
+		var stackSize = pageAlign.alignUp(int.!(CLOptions.STACK_SIZE.get()));
+		if (stackSize > 0) {
+			var ss = newSegmentLoad(header, "__STACK", MachO.VM_PROT_RW);
+			ss.filesize = 0;
+			ss.fileoff = 0;
+			ss.vmsize = stackSize;
+			ss.vmaddr = startAddr;
+			rt.recordStackStart(startAddr);
+			startAddr += stackSize;
+			rt.recordStackEnd(startAddr);
+		}
+		// code (text) segment starts at page 1
+		var cs = newSegmentLoad(header, "__TEXT", MachO.VM_PROT_RX);
+		// data segment immediately follows code segment
+		var ds = newSegmentLoad(header, "__DATA", MachO.VM_PROT_RW);
+		// initial thread state for registers (includes starting IP)
+		var ts = MachO_X86_64ThreadState.new();
+		header.addCmd(ts);
+		// ex segment for trapping explicit checks
+		var ex = if(rt.src != null, newSegmentLoad(header, "__EX", 0));
+		// create the buffer
+		var w = MachDataWriter.new(rt.codeRegion.space.pageAlign,
+			startAddr, 300 + mach.numMethods * 50);
+		// skip mach-o headers
+		w.skipN(header.totalsize);
+		// skip page zero
+		w.skipPage();
+		// generate code and runtime tables into buffer
+		// encodeCode(w, cs, ts);
+		var backend = Arm64Backend.new(compiler, prog, mach, w, null, test);
+		ts.rip = w.endAddr();
+		cs.vmaddr = w.endPageAddr();
+		rt.recordCodeStart(ts.rip);
+		backend.genAllCode();
+		var size = w.end();
+		if (size < pageAlign.size) {
+			// TODO: Santa or MacOS rejects binaries with text segments smaller than a page!
+			w.skipN(pageAlign.size - size);
+		}
+		rt.recordCodeEnd(w.endAddr());
+		mach.layoutMeta(w);
+		mach.layoutRuntime(w);
+		cs.filesize = w.end();
+		cs.vmsize = pageAlign.alignUp(cs.filesize);
+		cs.fileoff = 0;
+		// generate the unmapped "ex" region for trapping explicit checks
+		if (ex != null) {
+			w.skipPage();
+			var exStart = w.endPageAddr();
+			var exSize = pageAlign.alignUp(rt.src.layoutExRegion(exStart));
+			w.startAddr = w.startAddr + exSize;
+			ex.vmaddr = exStart;
+			ex.vmsize = exSize;
+			ex.filesize = 0;
+			ex.fileoff = 0;
+		}
+		// generate data into buffer
+		w.skipPage();
+		// compute starting location of data
+		w.atEnd().align(mach.data.addressSize);
+		ds.vmaddr = w.endPageAddr();
+		ds.fileoff = ds.vmaddr - w.startAddr;
+		rt.recordDataStart(w.endAddr());
+		mach.layoutData(w);
+		rt.recordDataEnd(w.endAddr());
+		rt.addHeapPointers(w);
+		ds.filesize = w.end() - ds.fileoff;
+		ds.vmsize = pageAlign.alignUp(ds.filesize + int.view(rt.heapSize));
+		// patch all addresses in the binary
+		w.patch(backend.patchCodeAddr);
+		// encode header at position 0 now that all addresses and offsets are known
+		header.encode(w.at(0));
+		header.encodeCmds(w);
+		// open the output file
+		var file = compiler.getOutputFileName(prog.name(), null);
+		var fd = System.fileOpen(file, false);
+		if (fd < 0) return prog.ERROR.OutputError(file);
+		// write the entire file from the buffer array
+		System.fileWriteK(fd, w.data, 0, w.end());
+		System.fileClose(fd);
+		// change permissions to make binary executable
+		compiler.makeExecutable(file);
+	}
+
+	def newSegmentLoad(header: MachO_Header, name: string, prot: int) ->  MachO_SegmentLoad {
+		var s = MachO_SegmentLoad.new(name);
+		s.initprot = prot;
+		s.maxprot = prot;
+		header.addCmd(s);
+		return s;
+	}
+
+	private def getRuntime(prog: Program) -> MachRuntime {
+		return MachProgram.!(prog.tprog).runtime;
 	}
 }
 
@@ -41,28 +180,16 @@ class Arm64Backend extends MachBackend {
 	var allocateRegsGlobal: void -> void;
 
 	// memory allocator configuration
-	var objReg: Arm64IntReg;
-	var sizeReg: Arm64IntReg;
-	var ipReg: Arm64IntReg;
-	var spReg: Arm64IntReg;
+	var objReg: Arm64Gpr;
+	var sizeReg: Arm64Gpr;
+	var ipReg: Arm64Gpr;
+	var spReg: Arm64Gpr;
 	var allocStubAddr: Addr;
 
 	new(compiler: Compiler, prog: Program, mach: MachProgram, w: MachDataWriter, dwarf: Dwarf, test)
 		super(compiler, prog, mach, w) {
 
-		asm = Arm64MacroAssembler.new();
-		if (ri_gc != null) {
-			// call the RiRuntime.gc() method
-			def frame = computeFrameSize(getFrame(ri_gc.ssa)), conv = frame.conv;
-			objReg = Regs.toGpr(conv.calleeRet(0));
-			sizeReg = Regs.toGpr(conv.calleeParam(1));
-			ipReg = Regs.toGpr(conv.calleeParam(2));
-			spReg = Regs.toGpr(conv.calleeParam(3));
-		} else {
-			// there is no appropriate RiRuntime.gc() method
-			objReg = Arm64Regs.R0;
-			sizeReg = Arm64Regs.R0;
-		}
+		asm = Arm64MacroAssembler.new(w);
 
 		codegen = SsaArm64Gen.new(context, mach, asm, w, dwarf);
 		if (compiler.useGlobalRegAllocMatcher != VstMatcher.None) allocateRegsGlobal = GlobalRegAlloc.new(Regs.SET, codegen).allocate;
@@ -73,27 +200,7 @@ class Arm64Backend extends MachBackend {
 	// Override MachBackend	
 
 	def genEntryStub() {
-		def main = prog.getMain().asMethod();
-		def frame = getFrame(main.ssa);
-
-		// switch to compiler-provided stack before initializing the runtime
-		if (CLOptions.STACK_SIZE.get() > 0) {
-			def stackEnd = ref(CiRuntimeModule.STACK_END);
-			asm.lea(Arm64Regs.RSP, stackEnd);
-		}
-
-		// initialize runtime if necessary
-		genMainInit(frame);
-
-		// TODO: CLOptions Stack Size
-
-		// call main
-		asm.callr_v3(mach.addrOfMethod(main));
-		// write return value to stdout if this is a test
-		if (test) genTestOutput(main, frame);
-		// exit with the return value of main
-		if (main.sig.returnTypes.length > 0) asm_exit_r(loc_gpr(frame, frame.conv.callerRet(0)));
-		else return asm_exit_code(0);
+		// asm.emit(0);
 	}
 
 	def genAllocStub() {
@@ -141,59 +248,7 @@ class Arm64Backend extends MachBackend {
 	}
 
 	def genMainInit(frame: MachFrame) {
-		// call RiRuntime.init() if it exists
-		// if (mach.runtime.ri_init >= 0) return genRiInit(frame);
-		// if this is a test, install custom signal handlers
-		// if (test) return genSigInstalls();
-		// TODO: remove compiler-generated initialization of args
-		if (frame.conv.paramTypes.length <= 1) return; // don't bother, main doesn't use it
-		// initialize arg array from OS-supplied argv and envp
-		def argc = Arm64Regs.R0, argp = Arm64Regs.R0, argArray = Arm64Regs.R0; // TODO FILL IN
-		def arrayType = V3Array.newType(mach.machType(V3.stringType));
-
-		asm.movq_r_m(argc, X86_64Regs.RSP.indirect());
-		asm.sub_r_i(argc, 1); // adjust for first arg
-		asmArrayAlloc(arrayType, argArray, argc);
-		asm.pushq_r(argArray); // save array on stack
-
-		asm.lea(argArray, argArray.plus(mach.getArrayElemOffset(arrayType, 0)));
-		asm.lea(argp, X86_64Regs.RSP.plus(3 * mach.data.addressSize));
-
-		// loop over individual arguments
-		var loopStart = asm.pos();
-		var str = X86_64Regs.RDI, strlen = X86_64Regs.RCX;
-
-		// load the argument and test against null
-		asm.movq_r_m(str, argp.indirect());
-		asm.cmp_r_i(str, 0);
-		asm.jc_rel(X86_64Conds.Z, 0);
-		var cmpPatch = asm.pos() - 1;
-
-		// compute length of string by finding null byte
-		asm.movq_r_i(strlen, -1);
-		asm.repne().scasb(); // updates RDI and RCX, kills RAX
-		asm.not_r(strlen);
-		asm.dec_r(strlen);
-
-		// allocate a byte array of length strlen
-		var argString = X86_64Regs.RDI;
-		asmArrayAlloc(V3.stringType, argString, strlen);
-		asm.movq_m_r(argArray.indirect(), argString); // write into arg array
-
-		// copy data into array
-		asm.lea(X86_64Regs.RDI, argString.plus(mach.getArrayElemOffset(V3.stringType, 0)));
-		asm.movq_r_m(X86_64Regs.RSI, argp.indirect());
-		asm.repne().movsb();
-
-		// increment argp and argarray position
-		asm.add_r_i(argArray, 4);
-		asm.add_r_i(argp, 4);
-		var offset = loopStart - asm.pos();
-		asm.jmp_rel(offset); // loop back to start
-
-		var offset2 = asm.pos() - cmpPatch - 1;
-		asm.w.at(cmpPatch).putb(offset2); // patch the branch that skips the loop
-		asm.w.atEnd();
-		asm.popq_r(loc_gpr(frame, frame.conv.callerParam(1)));
+		mach.fail("not implemented");
 	}
+		
 }
