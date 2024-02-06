@@ -22,6 +22,8 @@ component MachO {
 	def MH_KEXT_BUNDLE	= 0xb; // x86_64 kexts
 	// thread state flavors
 	def X86_64_THREAD_STATE_FLAVOR = 0x4; // 4
+	// https://opensource.apple.com/source/xnu/xnu-4570.41.2/osfmk/mach/arm/thread_status.h.auto.html
+	def ARM64_THREAD_STATE_FLAVOR = 0x6;
 
 	// CPU types
 	def CPU_TYPE_X86	= 0x00000007; // 7
@@ -30,6 +32,9 @@ component MachO {
 	def CPU_TYPE_POWERPC	= 0x00000012; // 18
 	def CPU_TYPE_POWERPC_64	= 0x01000012;
 	def CPU_SUBTYPE_X86_64  = 0x00000003; // 3
+	// https://opensource.apple.com/source/xnu/xnu-4570.41.2/osfmk/mach/machine.h.auto.html
+	def CPU_TYPE_ARM64 = 0x0100000C; // 
+	def CPU_SUBTYPE_ARM64 = 0x0;
 
 	// constants for protections
 	def VM_PROT_READ    = 0x01;

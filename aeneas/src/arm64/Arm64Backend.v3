@@ -29,6 +29,25 @@ component Arm64Common {
 		Alignment.new(4096), Alignment.new(8));
 }
 
+// a mach-O thread state command for x86-64
+class MachO_Arm64ThreadState extends MachO_LoadCmd {
+	var rip: int;
+	def encode(is64: bool, w: DataWriter) {
+		w.put_b32(0x5); 				// unix thread
+		w.put_b32(21 * 8 + 4 * 4);  			// 184 bytes for x86-64
+		w.put_b32(MachO.ARM64_THREAD_STATE_FLAVOR);    // arm64 thread state flavor
+		w.put_b32(42); 				        // number of words
+		w.zeroN(21 * 8);
+		var current_pos = w.pos;
+		w.at(w.pos - 5 * 8);
+		w.put_b64(rip);
+		w.at(current_pos);
+	}
+	def size(is64: bool) -> int {
+		return 21 * 8 + 4 * 4;
+	}
+}
+
 def Regs: Arm64RegSet;
 
 class Arm64Target extends Target {
@@ -64,8 +83,8 @@ class Arm64Target extends Target {
 
 		var header = MachO_Header.new(true);
 		var pageAlign = rt.codeRegion.space.pageAlign;
-		header.cputype = MachO.CPU_TYPE_X86_64;
-		header.cpusubtype = MachO.CPU_SUBTYPE_X86_64;
+		header.cputype = MachO.CPU_TYPE_ARM64;
+		header.cpusubtype = MachO.CPU_SUBTYPE_ARM64;
 		header.filetype = MachO.MH_EXECUTE;
 
 		var startAddr = int.view(CLOptions.VM_START_ADDR.get());
@@ -90,7 +109,7 @@ class Arm64Target extends Target {
 		// data segment immediately follows code segment
 		var ds = newSegmentLoad(header, "__DATA", MachO.VM_PROT_RW);
 		// initial thread state for registers (includes starting IP)
-		var ts = MachO_X86_64ThreadState.new();
+		var ts = MachO_Arm64ThreadState.new();
 		header.addCmd(ts);
 		// ex segment for trapping explicit checks
 		var ex = if(rt.src != null, newSegmentLoad(header, "__EX", 0));
@@ -200,7 +219,7 @@ class Arm64Backend extends MachBackend {
 	// Override MachBackend	
 
 	def genEntryStub() {
-		// asm.emit(0);
+		asm.emit(0xD4000021);
 	}
 
 	def genAllocStub() {
