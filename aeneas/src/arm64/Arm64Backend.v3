@@ -36,19 +36,23 @@ class MachO_Arm64ThreadState extends MachO_LoadCmd {
 		// unix thread
 		w.put_b32(0x5);
 		// 34 * 8 bytes for thread state + 4 * 4 for cmd, cmdSize, flavor, count
-		w.put_b32(34 * 8 + 4 * 4);
+		w.put_b32(size(true));
 		w.put_b32(MachO.ARM64_THREAD_STATE_FLAVOR);
 		// Number of words (4 bytes) in thread state
 		w.put_b32(68);
 		// zero out thread state
-		w.zeroN(34 * 8);
-		var current_pos = w.pos;
-		w.at(w.pos - 5 * 8);
-		w.put_b64(rip);
-		w.at(current_pos);
+		for (i < 34) {
+			w.put_b64(rip);
+		}
+		// w.zeroN(34 * 8);
+		// var current_pos = w.pos;
+		// w.at(w.pos - 5 * 8);
+		// w.put_b64(rip);
+		// w.at(current_pos);
 	}
 	def size(is64: bool) -> int {
-		return 34 * 8 + 4 * 4;
+		// return 34 * 8 + 4 * 4;
+		return 512;
 	}
 }
 

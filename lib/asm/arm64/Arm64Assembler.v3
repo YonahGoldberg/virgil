@@ -142,18 +142,18 @@ class Arm64Assembler(w: DataWriter) {
 
 	def addd_r_r_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12) { emit_r_r_i(rd, rn, imm, 145); }
 	def addq_r_r_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12) { emit_r_r_i(rd, rn, imm, 17); }
-	def addd_r_r_r_s_i(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, sh: RegShift, imm: u6) {
-		emit_r_r_s(rd, rn, imm, 145); 
-	}
+	// def addd_r_r_r_s_i(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, sh: RegShift, imm: u6) {
+	// 	emit_r_r_s(rd, rn, imm, 145); 
+	// }
 
-	def subd_r_r_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12) { emit_r_r_i(rd, rn, imm, 81); }
-	def subq_r_r_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12) { emit_r_r_i(rd, rn, imm, 209); }
+	// def subd_r_r_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12) { emit_r_r_i(rd, rn, imm, 81); }
+	// def subq_r_r_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12) { emit_r_r_i(rd, rn, imm, 209); }
 
-	def udivd(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) { emit_r_r_r(0x1AC00800, rd, rn, rm); }
-	def udivq(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) { emit_r_r_r(0x9AC00800, rd, rn, rm); }
+	// def udivd(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) { emit_r_r_r(0x1AC00800, rd, rn, rm); }
+	// def udivq(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) { emit_r_r_r(0x9AC00800, rd, rn, rm); }
 
-	def sdivd(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) { emit_r_r_r(0x1AC00C00, rd, rn, rm); }
-	def sdivq(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) { emit_r_r_r(0x9AC00C00, rd, rn, rm); }
+	// def sdivd(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) { emit_r_r_r(0x1AC00C00, rd, rn, rm); }
+	// def sdivq(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) { emit_r_r_r(0x9AC00C00, rd, rn, rm); }
 
 	private def emit_r_r_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12, code: byte) {
 		emit((code << 23) | (imm << 9) | (rn.id << 4) | rd.id);
