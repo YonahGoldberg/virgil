@@ -29,22 +29,26 @@ component Arm64Common {
 		Alignment.new(4096), Alignment.new(8));
 }
 
-// a mach-O thread state command for x86-64
+// a mach-O thread state command for Arm64
 class MachO_Arm64ThreadState extends MachO_LoadCmd {
 	var rip: int;
 	def encode(is64: bool, w: DataWriter) {
-		w.put_b32(0x5); 				// unix thread
-		w.put_b32(21 * 8 + 4 * 4);  			// 184 bytes for x86-64
-		w.put_b32(MachO.ARM64_THREAD_STATE_FLAVOR);    // arm64 thread state flavor
-		w.put_b32(42); 				        // number of words
-		w.zeroN(21 * 8);
+		// unix thread
+		w.put_b32(0x5);
+		// 34 * 8 bytes for thread state + 4 * 4 for cmd, cmdSize, flavor, count
+		w.put_b32(34 * 8 + 4 * 4);
+		w.put_b32(MachO.ARM64_THREAD_STATE_FLAVOR);
+		// Number of words (4 bytes) in thread state
+		w.put_b32(68);
+		// zero out thread state
+		w.zeroN(34 * 8);
 		var current_pos = w.pos;
 		w.at(w.pos - 5 * 8);
 		w.put_b64(rip);
 		w.at(current_pos);
 	}
 	def size(is64: bool) -> int {
-		return 21 * 8 + 4 * 4;
+		return 34 * 8 + 4 * 4;
 	}
 }
 
@@ -260,10 +264,6 @@ class Arm64Backend extends MachBackend {
 	def computeFrameSize(frame: MachFrame) -> MachFrame {
 		frame.frameSize = mach.alignTo(frame.slots() * mach.refSize + mach.code.addressSize, mach.stackAlign);
 		return frame;
-	}
-
-	def ref(addr: Addr) -> Arm64AddrRef {
-		return Arm64AddrRef.new(null, null, 0, addr, false);
 	}
 
 	def genMainInit(frame: MachFrame) {

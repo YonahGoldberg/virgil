@@ -1,19 +1,8 @@
 // Arm64 registers come in 32-bit and 64-bit variants
-type DataWidth {
-	case Width32;
-	case Width64;
-	def mask() -> int { return 0; } // TODO
-}
+enum DataWidth { W32, W64 }
 
 // Possible right-hand side operands for many arm instructions.
-type Arm64Operand {
-	case Imm12(imm: u12);
-	case Reg(rm: Arm64Reg);
-	case RegLslImm(rm: Arm64Reg, shift: u6);
-	case RegLsrImm(rm: Arm64Reg, shift: u6);
-	case RegAsrImm(rm: Arm64Reg, shift: u6);
-	case RegRorImm(rm: Arm64Reg, shift: u6);
-}
+enum RegShift { LSL, LSR, ASR, ROR }
 
 // Base class for all Arm64 registers
 // id is an ID 0-32
@@ -29,8 +18,8 @@ class Arm64Gpr extends Arm64Reg {
 
 	def name(size: DataWidth) -> string {
 		match (size) {
-			Width32 => return name32;
-			Width64 => return name64;
+			W32 => return name32;
+			W64 => return name64;
 		}
 	}
 }
@@ -93,15 +82,6 @@ component Arm64Regs {
 	];
 }
 
-// One of the following forms:
-// - [literal]
-// - [base, imm disp] - base + disp
-// - [base, reg offset, LSL leftShift]
-class Arm64Addr(base: Arm64Gpr, offset: Arm64Gpr, shift: int, disp: int) {
-	// TODO: Absolute? Plus?
-	def absolute() -> bool { return base == null && offset == null; }
-}
-
 // a condition for use in jumps, set, and cmov
 class Arm64Cond(name: string, index: int) {
 	var negate: Arm64Cond;
@@ -144,6 +124,8 @@ class Arm64Label {
 	def bound() -> bool { return pos >= 0; }
 }
 
+class Arm64Addr {}
+
 // Abstract interface for recording and patching addresses in assembled code.
 class Arm64AddrPatcher(absMarker: int, relMarker: int) {
 	def recordAbs32(pos: int, addr: Arm64Addr) {}
@@ -155,44 +137,50 @@ class Arm64Assembler(w: DataWriter) {
 
 	def pos() -> int { return w.pos; }
 
-	def mov(rd: Arm64Reg, rm: Arm64Reg, width: DataWidth) {
-		emit(42 | width.mask() | (rm.id << 15) | rd.id);
+	def movd_r_r(rd: Arm64Reg, rm: Arm64Reg) { emit(42 | (rm.id << 15) | rd.id); }
+	def movq_r_r(rd: Arm64Reg, rm: Arm64Reg) { emit(170 | (rm.id << 15) | rd.id); }
+
+	def addd_r_r_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12) { emit_r_r_i(rd, rn, imm, 145); }
+	def addq_r_r_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12) { emit_r_r_i(rd, rn, imm, 17); }
+	def addd_r_r_r_s_i(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, sh: RegShift, imm: u6) {
+		emit_r_r_s(rd, rn, imm, 145); 
 	}
 
-	def add(rd: Arm64Reg, rn: Arm64Reg, op: Arm64Operand, width: DataWidth) {
-		emit_r_r_op(11, rd, rn, op);
-	}
-	def sub(rd: Arm64Reg, rn: Arm64Reg, op: Arm64Operand, width: DataWidth) {
-		emit_r_r_op(162, rd, rn, op);
-	}
-	def udiv(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, width: DataWidth) {
-		emit_r_r_r(0x1AC00800 | width.mask(), rd, rn, rm);
-	}
-	def sdiv(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, width: DataWidth) {
-		emit_r_r_r(0x1AC00C00 | width.mask(), rd, rn, rm);
+	def subd_r_r_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12) { emit_r_r_i(rd, rn, imm, 81); }
+	def subq_r_r_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12) { emit_r_r_i(rd, rn, imm, 209); }
+
+	def udivd(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) { emit_r_r_r(0x1AC00800, rd, rn, rm); }
+	def udivq(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) { emit_r_r_r(0x9AC00800, rd, rn, rm); }
+
+	def sdivd(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) { emit_r_r_r(0x1AC00C00, rd, rn, rm); }
+	def sdivq(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) { emit_r_r_r(0x9AC00C00, rd, rn, rm); }
+
+	private def emit_r_r_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12, code: byte) {
+		emit((code << 23) | (imm << 9) | (rn.id << 4) | rd.id);
 	}
 
-	private def emit_r_r_op(opcode: u8, rd: Arm64Reg, rn: Arm64Reg, op: Arm64Operand) {
-		var sh = 0;
-		var imm = 0;
-		var reg = 0;
+	// private def emit_r_r_r_s_i(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, )
 
-		match (op) {
-			Imm12(i) => { imm = int.view(i); }
-			Reg(rm) => { reg = rm.id; }
-			RegLslImm(rm, shift) => { sh = 0; imm = int.view(shift); reg = rm.id; }
-			RegLsrImm(rm, shift) => { sh = 1; imm = int.view(shift); reg = rm.id; }
-			RegAsrImm(rm, shift) => { sh = 2; imm = int.view(shift); reg = rm.id; }
-			RegRorImm(rm, shift) => { sh = 3; imm = int.view(shift); reg = rm.id; }
-		}
+	// private def emit_r_r_op(opcode: u8, rd: Arm64Reg, rn: Arm64Reg, op: Arm64Operand) {
+	// 	var sh = 0;
+	// 	var imm = 0;
+	// 	var reg = 0;
 
-		def op_mask = (sh << 21) | (imm << 9) | (reg << 15);
-		emit((int.view(opcode) << 23) | (int.view(rn.id) << 4) | op_mask);
-	}
+	// 	match (op) {
+	// 		Imm12(i) => { imm = int.view(i); }
+	// 		Reg(rm) => { reg = rm.id; }
+	// 		RegLslImm(rm, shift) => { sh = 0; imm = int.view(shift); reg = rm.id; }
+	// 		RegLsrImm(rm, shift) => { sh = 1; imm = int.view(shift); reg = rm.id; }
+	// 		RegAsrImm(rm, shift) => { sh = 2; imm = int.view(shift); reg = rm.id; }
+	// 		RegRorImm(rm, shift) => { sh = 3; imm = int.view(shift); reg = rm.id; }
+	// 	}
 
-	private def emit_r_r_r(opcode: int, rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) {
-		emit(opcode | int.view(rd.id) |
-			(int.view(rn.id) << 4) | (int.view(rm.id) << 15));
+	// 	def op_mask = (sh << 21) | (imm << 9) | (reg << 15);
+	// 	emit((int.view(opcode) << 23) | (int.view(rn.id) << 4) | op_mask);
+	// }
+
+	private def emit_r_r_r(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, opcode: int) {
+		emit((rm.id << 15) | (rn.id << 4) | rd.id | opcode);
 	}
 
 	def emit(val: int) {

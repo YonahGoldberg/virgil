@@ -3,16 +3,16 @@
 def ABS_MARKER = 0x44332299;
 def REL_MARKER = 0x55443388;
 
-class Arm64AddrRef extends Arm64Addr {
-	def ref: Addr;
-	new(base: Arm64Gpr, offset: Arm64Gpr, shift: int, ref, relative: bool)
-		super(base, offset, shift, if(relative, REL_MARKER, ABS_MARKER)) { }
-}
+// class Arm64AddrRef extends Arm64Addr {
+// 	def ref: Addr;
+// 	new(base: Arm64Gpr, offset: Arm64Gpr, shift: int, ref, relative: bool)
+// 		super(base, offset, shift, if(relative, REL_MARKER, ABS_MARKER)) { }
+// }
 
-class Arm64LabelRef extends Arm64Addr {
-	def label: Label;
-	new(label) super(null, null, 0, REL_MARKER) { }
-}
+// class Arm64LabelRef extends Arm64Addr {
+// 	def label: Label;
+// 	new(label) super(null, null, 0, REL_MARKER) { }
+// }
 
 // Implementation of address patcher for assembler.
 class Arm64AddrPatcherImpl extends Arm64AddrPatcher {
