@@ -1,3 +1,5 @@
+// Copyright 2024 Virgil Authors. All rights reserved.
+// See LICENSE for details of Apache 2.0 license.
 
 // Distinguishes an absolute address from an address that refers to a V3 entity.
 def ABS_MARKER = 0x44332299;

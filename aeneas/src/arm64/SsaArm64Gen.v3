@@ -1,3 +1,6 @@
+// Copyright 2024 Virgil Authors. All rights reserved.
+// See LICENSE for details of Apache 2.0 license.
+
 // Arm64 instructions are ints that look like <width><mode arg><mode><code>
 // where each part of the instruction is a byte
 

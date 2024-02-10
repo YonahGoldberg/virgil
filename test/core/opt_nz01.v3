@@ -1,6 +1,5 @@
 //@execute 0=false; 1=false
-component opt_nz01 {
-	def main(a: int) -> bool {
-		return (a | 1) == 0;
-	}
+def main(a: int) -> bool {
+	return (a | 1) == 0;
 }
+
