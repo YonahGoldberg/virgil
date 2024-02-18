@@ -7,6 +7,8 @@ component Arm64Targets {
 	}
 }
 
+def SYS_exit: u16 = 0x1;
+
 component Arm64Common {
 	def LOWERING = makeMachLoweringConfig();
 	def makeMachLoweringConfig() -> MachLoweringConfig {
@@ -27,37 +29,63 @@ component Arm64Common {
 	def KERNEL_RETURN_REGS: Array<Arm64Reg> = [];
 
 	def SPACE = AddressSpace.new("mem", false, 64, 8,
-		Alignment.new(4096), Alignment.new(8));
+		Alignment.new(16384), Alignment.new(8));
 }
 
 // a mach-O thread state command for Arm64
 class MachO_Arm64ThreadState extends MachO_LoadCmd {
-	var rip: int;
+	var pc: int; // Program counter
 	def encode(is64: bool, w: DataWriter) {
 		// unix thread
 		w.put_b32(0x5);
+
 		// 34 * 8 bytes for thread state + 4 * 4 for cmd, cmdSize, flavor, count
 		w.put_b32(size(true));
+		// Special flavor for Arm64
 		w.put_b32(MachO.ARM64_THREAD_STATE_FLAVOR);
 		// Number of words (4 bytes) in thread state
 		w.put_b32(68);
-		// zero out thread state
-		for (i < 34) {
-			w.put_b64(rip);
-		}
-		// w.zeroN(34 * 8);
-		// var current_pos = w.pos;
-		// w.at(w.pos - 5 * 8);
-		// w.put_b64(rip);
-		// w.at(current_pos);
+		// Zero out registers
+		w.zeroN(34 * 8);
+		// Add pc
+		var current_pos = w.pos;
+		w.at(w.pos - 2 * 8);
+		w.put_b64(pc);
+		w.at(current_pos);
 	}
 	def size(is64: bool) -> int {
-		// return 34 * 8 + 4 * 4;
-		return 512;
+		return 34 * 8 + 4 * 4;
 	}
 }
 
-def Regs: Arm64RegSet;
+class MachO_Arm64EntryPoint extends MachO_LoadCmd {
+	var entryoff: int;
+	def encode(is64: bool, w: DataWriter) {
+		w.put_b32(0x28 | 0x80000000);
+		w.put_b32(24);
+		w.put_b64(entryoff);
+		w.put_b64(0);
+	}
+	def size(is64: bool) -> int {
+		return 24;
+	}
+}
+
+class MachO_LinkEdit extends MachO_LoadCmd {
+	var entryoff: int;
+	def encode(is64: bool, w: DataWriter) {
+		w.put_b32(0x1D);
+		w.put_b32(4);
+		w.put_b64(4);
+		w.put_b64(16);
+	}
+	def size(is64: bool) -> int {
+		return 4;
+	}
+}
+
+def Regs: Arm64Regs;
+def MRegs: Arm64RegSet;
 
 class Arm64Target extends Target {
 	def test: bool;
@@ -100,9 +128,9 @@ class Arm64Target extends Target {
 		if (startAddr == 0) startAddr = DEFAULT_VADDR_START;
 		// protect page zero for trapping null accesses
 		var pz = newSegmentLoad(header, "__NULL", 0);
-		pz.vmsize = pageAlign.size;
+		pz.vmsize = 0x100000000;
 		// stack (data) segment if a non-zero stack size is specified
-		var stackSize = pageAlign.alignUp(int.!(CLOptions.STACK_SIZE.get()));
+		var stackSize = pageAlign.alignUp64(int.!(CLOptions.STACK_SIZE.get()));
 		if (stackSize > 0) {
 			var ss = newSegmentLoad(header, "__STACK", MachO.VM_PROT_RW);
 			ss.filesize = 0;
@@ -117,9 +145,15 @@ class Arm64Target extends Target {
 		var cs = newSegmentLoad(header, "__TEXT", MachO.VM_PROT_RX);
 		// data segment immediately follows code segment
 		var ds = newSegmentLoad(header, "__DATA", MachO.VM_PROT_RW);
+		var ls = newSegmentLoad(header, "__LINKEDIT", 1);
 		// initial thread state for registers (includes starting IP)
 		var ts = MachO_Arm64ThreadState.new();
+		// var le = MachO_LinkEdit.new();
 		header.addCmd(ts);
+		// header.addCmd(le);
+		// var ep = MachO_Arm64EntryPoint.new();
+		// header.addCmd(ep);
+
 		// ex segment for trapping explicit checks
 		var ex = if(rt.src != null, newSegmentLoad(header, "__EX", 0));
 		// create the buffer
@@ -132,9 +166,12 @@ class Arm64Target extends Target {
 		// generate code and runtime tables into buffer
 		// encodeCode(w, cs, ts);
 		var backend = Arm64Backend.new(compiler, prog, mach, w, null, test);
-		ts.rip = w.endAddr();
+		var endAddr = w.endAddr();
+		// ep.entryoff = endAddr - w.startAddr; // TODO
+		ts.pc = endAddr;
+
 		cs.vmaddr = w.endPageAddr();
-		rt.recordCodeStart(ts.rip);
+		rt.recordCodeStart(endAddr);
 		backend.genAllCode();
 		var size = w.end();
 		if (size < pageAlign.size) {
@@ -145,13 +182,13 @@ class Arm64Target extends Target {
 		mach.layoutMeta(w);
 		mach.layoutRuntime(w);
 		cs.filesize = w.end();
-		cs.vmsize = pageAlign.alignUp(cs.filesize);
+		cs.vmsize = pageAlign.alignUp64(cs.filesize);
 		cs.fileoff = 0;
 		// generate the unmapped "ex" region for trapping explicit checks
 		if (ex != null) {
 			w.skipPage();
 			var exStart = w.endPageAddr();
-			var exSize = pageAlign.alignUp(rt.src.layoutExRegion(exStart));
+			var exSize = pageAlign.alignUp64(rt.src.layoutExRegion(exStart));
 			w.startAddr = w.startAddr + exSize;
 			ex.vmaddr = exStart;
 			ex.vmsize = exSize;
@@ -169,7 +206,14 @@ class Arm64Target extends Target {
 		rt.recordDataEnd(w.endAddr());
 		rt.addHeapPointers(w);
 		ds.filesize = w.end() - ds.fileoff;
-		ds.vmsize = pageAlign.alignUp(ds.filesize + int.view(rt.heapSize));
+		ds.vmsize = pageAlign.alignUp64(ds.filesize + int.view(rt.heapSize));
+
+		w.skipPage();
+		w.atEnd().align(mach.data.addressSize);
+		ls.vmaddr = w.endPageAddr();
+		ls.fileoff = ls.vmaddr - ds.vmaddr;
+		ls.filesize = 16;
+		ls.vmsize = pageAlign.alignUp(ds.filesize);
 		// patch all addresses in the binary
 		w.patch(backend.patchCodeAddr);
 		// encode header at position 0 now that all addresses and offsets are known
@@ -220,15 +264,15 @@ class Arm64Backend extends MachBackend {
 		asm = Arm64MacroAssembler.new(w);
 
 		codegen = SsaArm64Gen.new(context, mach, asm, w, dwarf);
-		if (compiler.useGlobalRegAllocMatcher != VstMatcher.None) allocateRegsGlobal = GlobalRegAlloc.new(Regs.SET, codegen).allocate;
-		if (compiler.LocalRegAlloc) allocateRegs = LocalRegAlloc.new(Regs.SET, codegen).allocate;
-		else allocateRegs = SimpleRegAlloc.new(Regs.SET, codegen).allocate;
+		if (compiler.useGlobalRegAllocMatcher != VstMatcher.None) allocateRegsGlobal = GlobalRegAlloc.new(MRegs.SET, codegen).allocate;
+		if (compiler.LocalRegAlloc) allocateRegs = LocalRegAlloc.new(MRegs.SET, codegen).allocate;
+		else allocateRegs = SimpleRegAlloc.new(MRegs.SET, codegen).allocate;
 	}
 
 	// Override MachBackend	
 
 	def genEntryStub() {
-		asm.emit(0xD4000021);
+		asm_exit_code(0);
 	}
 
 	def genAllocStub() {
@@ -254,7 +298,13 @@ class Arm64Backend extends MachBackend {
 	// Methods overridden for each OS target
 	def genSigHandlerInstall(signo: int, handler: Addr);
 	def asm_exit_r(r: X86_64Gpr);
-	def asm_exit_code(code: int);
+
+	def asm_exit_code(code: u16) {
+		asm.movd_r_i(Regs.R0, code);
+		asm.movd_r_i(Regs.R8, SYS_exit);
+		asm.svc();
+	}
+
 	def genTestOutput(main: IrMethod, frame: MachFrame);
 
 	// Helper functions
