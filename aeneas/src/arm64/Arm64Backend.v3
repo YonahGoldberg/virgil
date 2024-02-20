@@ -29,7 +29,7 @@ component Arm64Common {
 	def KERNEL_RETURN_REGS: Array<Arm64Reg> = [];
 
 	def SPACE = AddressSpace.new("mem", false, 64, 8,
-		Alignment.new(16384), Alignment.new(8));
+		Alignment.new(0x4000), Alignment.new(8));
 }
 
 // a mach-O thread state command for Arm64
@@ -68,19 +68,6 @@ class MachO_Arm64EntryPoint extends MachO_LoadCmd {
 	}
 	def size(is64: bool) -> int {
 		return 24;
-	}
-}
-
-class MachO_LinkEdit extends MachO_LoadCmd {
-	var entryoff: int;
-	def encode(is64: bool, w: DataWriter) {
-		w.put_b32(0x1D);
-		w.put_b32(4);
-		w.put_b64(4);
-		w.put_b64(16);
-	}
-	def size(is64: bool) -> int {
-		return 4;
 	}
 }
 
@@ -127,7 +114,7 @@ class Arm64Target extends Target {
 		var startAddr = int.view(CLOptions.VM_START_ADDR.get());
 		if (startAddr == 0) startAddr = DEFAULT_VADDR_START;
 		// protect page zero for trapping null accesses
-		var pz = newSegmentLoad(header, "__NULL", 0);
+		var pz = newSegmentLoad(header, "__PAGEZERO", 0);
 		pz.vmsize = pageAlign.size;
 		// stack (data) segment if a non-zero stack size is specified
 		var stackSize = pageAlign.alignUp(int.!(CLOptions.STACK_SIZE.get()));
@@ -195,8 +182,6 @@ class Arm64Target extends Target {
 			ex.filesize = 0;
 			ex.fileoff = 0;
 		}
-		// generate data into buffer
-		w.skipPage();
 		// compute starting location of data
 		w.atEnd().align(mach.data.addressSize);
 		ds.vmaddr = w.endPageAddr();
@@ -208,12 +193,11 @@ class Arm64Target extends Target {
 		ds.filesize = w.end() - ds.fileoff;
 		ds.vmsize = pageAlign.alignUp(ds.filesize + int.view(rt.heapSize));
 
-		w.skipPage();
-		w.atEnd().align(mach.data.addressSize);
+		w.skipN(16);
 		ls.vmaddr = w.endPageAddr();
-		ls.fileoff = ls.vmaddr - ds.vmaddr;
+		ls.fileoff = ds.filesize + ds.fileoff;
 		ls.filesize = 16;
-		ls.vmsize = pageAlign.alignUp(ds.filesize);
+		ls.vmsize = pageAlign.alignUp(16);
 		// patch all addresses in the binary
 		w.patch(backend.patchCodeAddr);
 		// encode header at position 0 now that all addresses and offsets are known
