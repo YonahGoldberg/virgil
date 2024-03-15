@@ -1,0 +1,157 @@
+// Copyright 2024 Virgil Authors. All rights reserved.
+// See LICENSE for details of Apache 2.0 license.
+
+// Unit tester for the Arm64 Assembler. You don't want to run this file alone,
+// but execute it via test.bash. This tester associates every virgil assembly 
+// instruction with its corresponding mnemonic in the `as` assembler. It takes in two plus
+// arguments, the locations of two output files--one for virgil opcodes and one for corresponding
+// assembly instructions. The rest of the arguments are lists of the nmemonics of the instructions
+// to test. If there are only two arguments, we test all instructions.
+
+// The bash script located in this directory is responsible for
+// running this tester, taking the assembly output, compiling it to an objectfile , creating an 
+// objdump of it, and then parsing it to the same format as the virgil opcodes--one opcode per line.
+// We then just do a pairwise line-by-line difference on the two files to see which opcodes virgil
+// produces incorrectly.
+
+// File containing one assembly instruction per line.
+var asmFd = 0;
+// File containing corresponding opcodes we produce of assembly instructions
+var opcodeFd = 0;
+
+def data = DataWriter.new();
+var asm = Arm64Assembler.new(data);
+var buf = StringBuilder.new();
+
+// First argument is tmpPath, the rest are mnemonics of
+// Assembly instructions to test. If args.length() == 1, test everything
+var args: Array<string>;
+// Mutable variable indicating what size register we render for assembly instructions
+// either 64-bit or 32-bit
+var width = DataWidth.W64;
+
+def main(a: Array<string>) -> int {
+	if (a.length < 2) {
+		System.error("TestGenError", "Temporary file path argument missing");
+	}
+
+	args = a;
+	def asmPath = a[0];
+	def opcodePath = a[1];
+	asmFd = System.fileOpen(asmPath, false);
+	opcodeFd = System.fileOpen(opcodePath, false);
+
+	test_movd();
+	buf.puts(";;passed");
+	outln(asmFd);
+	return 0;
+}
+
+// Extracts opcode from dataWriter into buffer with new line and flushes it to opcode file
+// Resets dataWriter and buffer
+def writeOpcode() {
+	for (i < data.pos) buf.putx_8(data.data[i]);
+	data.at(0);
+	outln(opcodeFd);
+}
+
+// Appends a new line to the buffer, flushes it to fd, and resets buffer
+def outln(fd: int) {
+	buf.ln();
+	System.fileWriteK(fd, buf.buf, 0, buf.length);
+	buf.reset();
+}
+
+// Returns true if we should skip testing this instruction
+def skip(mnemonic: string) -> bool {
+	if (args.length == 2) return false;
+	for (i = 2; i < args.length; i++) {
+		if (Strings.startsWith(mnemonic, args[i])) return false;
+	}
+	return true;
+}
+
+// Tests an instruction with no arguments
+// mnemonic - instruction to test
+// emitAsm - emit opcode to DataWriter of instruction to test
+def testNoArgs(mnemonic: string, emitAsm: void -> Arm64Assembler) {
+	emitAsm();
+	writeOpcode();
+	buf.puts(mnemonic);
+	outln(asmFd);
+}
+
+// Tests an instruction with one argument
+// mnemonic - instruction to test
+// args - array of instruction args and function to print them to buf
+// emitAsm - emit opcode to DataWriter of instruction to test
+def testOneArg<A>(mnemonic: string,
+	args: (Array<A>, A -> void),
+	emitAsm: A -> Arm64Assembler) {
+	if (skip(mnemonic)) return;
+	for (a in args.0) {
+		emitAsm(a);
+		writeOpcode();
+		buf.puts(mnemonic).sp();
+		args.1(a);
+		outln(asmFd);
+	}
+}
+
+// Tests an instruction with two arguments, comma separated
+// mnemonic - instruction to test
+// args - array of instruction args and function to print them to buf
+// emitAsm - emit opcode to DataWriter of instruction to test
+def testTwoArgs<A, B>(mnemonic: string,
+	args1: (Array<A>, A -> void),
+	args2: (Array<B>, B -> void),
+	emitAsm: (A, B) -> Arm64Assembler) {
+	if (skip(mnemonic)) return;
+	for (a in args1.0) {
+		for (b in args2.0) {
+			emitAsm(a, b);
+			writeOpcode();
+			buf.puts(mnemonic).sp();
+			args1.1(a);
+			buf.puts(", ");
+			args2.1(b);
+			outln(asmFd);
+		}
+	}
+}
+
+// A bunch of rendering functions so that we can match instructions we assemble
+// to mnemonics that `as` uses
+def renderSfr(r: Arm64Sfr) { buf.puts(r.name); }
+def renderGpr(r: Arm64Gpr) { buf.puts(r.name(width)); }
+def renderGpr32(r: Arm64Gpr) { buf.puts(r.name32); }
+
+// random immediates for testing.
+def imms = [0, 1, 2, -1, -2, -128, 127, 128, 253, 255, 1023, 65535, -32767, 0x11223344, 0x55443322, 0x99aabbcc];
+// 16-bit immediates for testing ops like mov, which allow max 16-bit imms.
+def u16s: Array<u16> = [0, 1, 2, u16.view(-1), u16.view(-2), u16.view(-128), 96, 127, 128, 1023,
+    u16.view(-999), 32767, u16.view(-32768)];
+
+def renderInt(i: int) {
+    buf.puts("#");
+	buf.putd(i);
+}
+def renderU16(i: u16) {
+	buf.puts("#");
+	buf.putd(u32.view(i));
+}
+
+// Arguments to assembly instructions paired with a function to print them to buf
+def arg_r0 = ([Arm64Regs.R0], renderGpr);
+def arg_1_u16 = ([u16.view(1)], renderU16);
+def arg_r = (Arm64Regs.GPRS, renderGpr);
+def arg_i = (imms, renderInt);
+def arg_u16 = (u16s, renderU16);
+
+// Testing functions that take in a mnemonic and a corresponding assembler function
+def test_r_u16 = testTwoArgs(_, arg_r0, arg_1_u16, _);
+
+// Testing functions for specific assembly instructions
+def test_movd() {
+	test_r_u16("mov", asm.movd_r_i);
+}

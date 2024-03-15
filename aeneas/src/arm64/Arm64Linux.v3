@@ -6,15 +6,15 @@ def SPACE = AddressSpace.new("mem", false, 64, 8,
 def KERNEL_CALL_RETURN = Tuple.newType(Lists.cons2(Long.TYPE, Long.TYPE));
 def Arm64_LINUX_TARGET = Aeneas.registerTarget(
 		LinuxTarget.new("arm64-linux", SPACE, IntNormalizers.I64LE, Arm64Common.LOWERING,
-			Arm64LinuxBackend.new(_, _, _, _, _, false), ElfConst.EM_ARM,
+			Arm64LinuxBackend.new(_, _, _, _, _, false), ElfConst.EM_AARCH64,
 			KERNEL_CALL_RETURN));
 
 def Regs: Arm64Regs;
 def MRegs: Arm64RegSet;
 
 // Provides the arm64 specific logic for generating a Linux binary.
-class Arm64LinuxBackend extends X86_64Backend {
-	def SYSNUM = Regs.R0;
+class Arm64LinuxBackend extends Arm64Backend {
+	def SYSNUM = Regs.R8;
 	def PARAM0 = Regs.R0;
 	def PARAM1 = Regs.R1;
 	def PARAM2 = Regs.R2;
@@ -28,7 +28,11 @@ class Arm64LinuxBackend extends X86_64Backend {
 	// Override Arm64Backend	
 
     def genSigHandlerInstall(signo: int, handler: Addr) { mach.fail("not implemented"); }
-	def asm_exit_r(r: X86_64Gpr) { mach.fail("not implemented"); }
-	def asm_exit_code(code: u16) { mach.fail("not implemented"); }
+	def asm_exit_r(r: Arm64Gpr) { mach.fail("not implemented"); }
+	def asm_exit_code(code: int) {
+		asm.movd_r_i(SYSNUM, 94);
+		asm.movd_r_i(PARAM0, u16.view(code));
+		asm.svc();
+	}
 	def genTestOutput(main: IrMethod, frame: MachFrame) { mach.fail("not implemented"); }
 }

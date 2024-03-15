@@ -1,0 +1,68 @@
+// Copyright 2024 Virgil Authors. All rights reserved.
+// See LICENSE for details of Apache 2.0 license.
+
+// Utility for parsing objdumps. The input array consists of two strings,
+// first the path to some objdump output in the file system. Second, the
+// path to some new file to create. We output to this second file an oredered
+// list of all the opcodes of the objdump input in hex, one opcode on each line.
+def main(a: Array<string>) -> int {
+    if (a.length != 2) {
+		System.error("ObjdumpParserError", "Need two arguments: /path/to/objdump /path/to/output");
+	}
+
+    def objdumpPath = a[0];
+    def outputPath = a[1];
+    def outputFd = System.fileOpen(outputPath, false);
+    def objdumpBytes = System.fileLoad(objdumpPath);
+    def buf = StringBuilder.new();
+    var fileIndex = 0;
+
+    def skipLine = skipTo(objdumpBytes, _, '\n', 1);
+    def skipToOpcode = skipTo(objdumpBytes, _, ':', 2);
+    
+    // Skip first 6 lines
+    for (i < 6) {
+        fileIndex = skipLine(fileIndex);
+    }
+
+    while (fileIndex < objdumpBytes.length) {
+        fileIndex = skipToOpcode(fileIndex);
+        // Read each byte
+        for (i < 4) {
+            buf.putc(toUpperCase(objdumpBytes[fileIndex]));
+            buf.putc(toUpperCase(objdumpBytes[fileIndex + 1]));
+            fileIndex += 3;
+        }
+        fileIndex = skipLine(fileIndex);
+        outln(buf, outputFd);
+    }
+
+    return 0;
+}
+
+// Converts byte to upper case if it is a lower case char
+def toUpperCase(b: byte) -> byte {
+    if (97 <= b && b <= 122) return byte.view(b - 32);
+    return b;
+}
+
+// Given a file and a current index, return the index `numAfter` after
+// the skip char, or the end of the file
+def skipTo(objdumpBytes: Array<byte>, curIndex: int, skipChar: byte, numAfter: int) -> int {
+    var i = curIndex;
+    while (i < objdumpBytes.length) {
+        def c = objdumpBytes[i];
+        if (c == skipChar) {
+            return Ints.min(i + numAfter, objdumpBytes.length);
+        }
+        i++;
+    }
+    return i;
+}
+
+// Appends a new line to the buffer, flushes it to fd, and resets buffer
+def outln(buf: StringBuilder, fd: int) {
+	buf.ln();
+	System.fileWriteK(fd, buf.buf, 0, buf.length);
+	buf.reset();
+}

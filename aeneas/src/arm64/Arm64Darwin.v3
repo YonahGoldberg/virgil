@@ -8,7 +8,7 @@ component Arm64DarwinTargets {
 }
 
 def SYS_exit: u16 = 0x1;
-def SPACE = AddressSpace.new("mem", false, 64, 8,
+def space = AddressSpace.new("mem", false, 64, 8,
 	Alignment.new(0x4000), Alignment.new(8));
 def Regs: Arm64Regs;
 def MRegs: Arm64RegSet;
@@ -22,7 +22,6 @@ class Arm64Target extends Target {
 	def configureCompiler(compiler: Compiler) {}
 
 	def configureProgram(prog: Program) {
-		def space = Arm64Common.SPACE;
 		def intNorm = IntNormalizers.I64LE;
 		var mach = MachProgram.new(prog, space, space, intNorm);
 		prog.tprog = mach;
@@ -91,7 +90,7 @@ class Arm64Target extends Target {
 		w.skipPage();
 		// generate code and runtime tables into buffer
 		// encodeCode(w, cs, ts);
-		var backend = Arm64DarwinBackend.new(compiler, prog, mach, w, null, test);
+		var backend = Arm64DarwinBackend.new(compiler, prog, mach, w, test);
 		var endAddr = w.endAddr();
 		// ep.entryoff = endAddr - w.startAddr; // TODO
 		ts.pc = endAddr;
@@ -167,14 +166,14 @@ class Arm64Target extends Target {
 }
 
 class Arm64DarwinBackend extends Arm64Backend {
-	new(compiler: Compiler, prog: Program, mach: MachProgram, w: MachDataWriter, test)
+	new(compiler: Compiler, prog: Program, mach: MachProgram, w: MachDataWriter, test: bool)
 		super(compiler, prog, mach, w, null, test) {}
 
 	// Override Arm64Backend	
 
     def genSigHandlerInstall(signo: int, handler: Addr) { mach.fail("not implemented"); }
-	def asm_exit_r(r: X86_64Gpr) { mach.fail("not implemented"); }
-	def asm_exit_code(code: u16) { mach.fail("not implemented"); }
+	def asm_exit_r(r: Arm64Gpr) { mach.fail("not implemented"); }
+	def asm_exit_code(code: int) { mach.fail("not implemented"); }
 	def genTestOutput(main: IrMethod, frame: MachFrame) { mach.fail("not implemented"); }
 }
 

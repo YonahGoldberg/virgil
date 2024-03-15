@@ -1,7 +1,8 @@
 // Copyright 2024 Virgil Authors. All rights reserved.
 // See LICENSE for details of Apache 2.0 license.
 
-def Regs: Arm64RegSet;
+def Regs: Arm64Regs;
+def MRegs: Arm64RegSet;
 
 component Arm64Common {
 	def LOWERING = makeMachLoweringConfig();
@@ -51,16 +52,14 @@ class Arm64Backend extends MachBackend {
 	// Override MachBackend	
 
 	def genEntryStub() {
-		// asm_exit_code(0);
+		asm_exit_code(0);
 	}
 
 	def genAllocStub() {
 		mach.fail("not implemented");
 	}
 
-	def genCodeFromSsa() {
-		mach.fail("not implemented");
-	}
+	def genCodeFromSsa() {}
 
 	def patchCodeAddr(w: DataWriter, a: Addr, posAddr: int) {
 		mach.fail("not implemented");
@@ -76,8 +75,8 @@ class Arm64Backend extends MachBackend {
 
 	// Methods overridden for each OS target
 	def genSigHandlerInstall(signo: int, handler: Addr);
-	def asm_exit_r(r: X86_64Gpr);
-	def asm_exit_code(code: u16);
+	def asm_exit_r(r: Arm64Gpr);
+	def asm_exit_code(code: int);
 	def genTestOutput(main: IrMethod, frame: MachFrame);
 
 	// Helper functions
