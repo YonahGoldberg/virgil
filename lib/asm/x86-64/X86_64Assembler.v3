@@ -747,7 +747,7 @@ class X86_64Assembler(w: DataWriter, OP_REX: byte) {
 
 	// 4-byte moves
 	def movd_r_r(a: X86_64Gpr, b: X86_64Gpr) -> this {
-		emit_rex_b_r_r(a, b, NO_REX, 0x89);
+		emit_rex_b_r_r(a, b, NO_REX, 0x88);
 	}
 	def movd_m_r(a: X86_64Addr, b: X86_64Gpr) -> this {
 		if (/*TODO*/false && b == X86_64Regs.RAX && a.absolute()) {

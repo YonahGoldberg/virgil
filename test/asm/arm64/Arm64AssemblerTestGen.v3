@@ -22,9 +22,8 @@ var opcodeFd = 0;
 def data = DataWriter.new();
 var asm = Arm64Assembler.new(data);
 var buf = StringBuilder.new();
+var lineNum = 0;
 
-// First argument is tmpPath, the rest are mnemonics of
-// Assembly instructions to test. If args.length() == 1, test everything
 var args: Array<string>;
 // Mutable variable indicating what size register we render for assembly instructions
 // either 64-bit or 32-bit
@@ -38,21 +37,16 @@ def main(a: Array<string>) -> int {
 	args = a;
 	def asmPath = a[0];
 	def opcodePath = a[1];
+	def objectPath = a[2];
 	asmFd = System.fileOpen(asmPath, false);
 	opcodeFd = System.fileOpen(opcodePath, false);
+
+	writeObjdumpHeader(objectPath, opcodeFd);
 
 	test_movd();
 	buf.puts(";;passed");
 	outln(asmFd);
 	return 0;
-}
-
-// Extracts opcode from dataWriter into buffer with new line and flushes it to opcode file
-// Resets dataWriter and buffer
-def writeOpcode() {
-	for (i < data.pos) buf.putx_8(data.data[i]);
-	data.at(0);
-	outln(opcodeFd);
 }
 
 // Appends a new line to the buffer, flushes it to fd, and resets buffer
@@ -64,11 +58,69 @@ def outln(fd: int) {
 
 // Returns true if we should skip testing this instruction
 def skip(mnemonic: string) -> bool {
-	if (args.length == 2) return false;
-	for (i = 2; i < args.length; i++) {
+	if (args.length == 3) return false;
+	for (i = 3; i < args.length; i++) {
 		if (Strings.startsWith(mnemonic, args[i])) return false;
 	}
 	return true;
+}
+
+def writeObjdumpHeader(objectPath: string, opcodeFd: int) {
+	buf.ln();
+	buf.puts(Strings.builderOf(objectPath).puts(":\tfile format mach-o arm64\n\n").toString());
+	buf.puts("Disassembly of section __TEXT,__text:\n\n");
+	buf.puts("0000000000000000 <ltmp0>:");
+	outln(opcodeFd);
+}
+
+def reverse(s: string) -> string {
+	def r = string.new(s.length);
+	for (i < s.length) {
+		r[i] = s[s.length - i - 1];
+	}
+	return r;
+}
+
+// Converts byte to lower case if it is a lower case char
+def toLowerCase(b: byte) -> byte {
+    if (65 <= b && b <= 90) return byte.view(b + 32);
+    return b;
+}
+
+def toHexString(x: int) -> string {
+	if (x == 0) return "0";
+	def hex_digits = "0123456789abcdef";
+    def result = StringBuilder.new();
+
+    while (x > 0) {
+        def remainder = x % 16;
+        result.putc(hex_digits[remainder]);
+		x /= 16;
+	}
+    return reverse(result.toString());
+}
+
+// Extracts opcode from dataWriter into buffer with new line and flushes it to opcode file
+// Resets dataWriter and buffer
+def writeOpcode() {
+	def hexString = toHexString(lineNum * 4);
+	lineNum++;
+	def numSpaces = 8 - hexString.length;
+
+	// Write line number
+	for (i < numSpaces) buf.puts(" ");
+	buf.puts(hexString).puts(":");
+
+	for (i < data.pos) {
+		buf.puts(" ");
+		buf.putx_8(data.data[i]);
+		buf.buf[buf.length - 1] = toLowerCase(buf.buf[buf.length - 1]);
+		buf.buf[buf.length - 2] = toLowerCase(buf.buf[buf.length - 2]);
+	}
+
+	data.at(0);
+	System.fileWriteK(opcodeFd, buf.buf, 0, buf.length);
+	buf.reset();
 }
 
 // Tests an instruction with no arguments
@@ -111,11 +163,14 @@ def testTwoArgs<A, B>(mnemonic: string,
 		for (b in args2.0) {
 			emitAsm(a, b);
 			writeOpcode();
-			buf.puts(mnemonic).sp();
+			buf.sp().sp().tab().puts(mnemonic).tab();
 			args1.1(a);
 			buf.puts(", ");
 			args2.1(b);
-			outln(asmFd);
+			buf.ln();
+			System.fileWriteK(opcodeFd, buf.buf, 0, buf.length);
+			System.fileWriteK(asmFd, buf.buf, 0, buf.length);
+			buf.reset();
 		}
 	}
 }
@@ -149,7 +204,8 @@ def arg_i = (imms, renderInt);
 def arg_u16 = (u16s, renderU16);
 
 // Testing functions that take in a mnemonic and a corresponding assembler function
-def test_r_u16 = testTwoArgs(_, arg_r0, arg_1_u16, _);
+def test_r_u16 = testTwoArgs(_, arg_r, arg_u16, _);
+def test_r_r = testTwoArgs(_, arg_r0, arg_r0, _);
 
 // Testing functions for specific assembly instructions
 def test_movd() {

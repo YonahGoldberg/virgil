@@ -147,7 +147,7 @@ class Arm64Assembler(w: DataWriter) {
 
 	def pos() -> int { return w.pos; }
 
-	def movd_r_i(rd: Arm64Reg, imm: u16) -> this { emit((0xA5 << 23) | (imm << 5) | rd.regnum); }
+	def movd_r_i(rd: Arm64Reg, imm: u16) -> this { emit((0xA5 << 23) | (int.view(imm) << 5) | rd.regnum); }
 	def movq_r_i(rd: Arm64Reg, imm: u16) -> this { emit((0x1A5 << 23) | (imm << 5) | rd.regnum); }
 	def movd_r_r(rd: Arm64Reg, rm: Arm64Reg) -> this { emit((42 << 23) | (rm.regnum << 15) | rd.regnum); }
 	def movq_r_r(rd: Arm64Reg, rm: Arm64Reg) -> this { emit((170 << 23) | (rm.regnum << 15) | rd.regnum); }

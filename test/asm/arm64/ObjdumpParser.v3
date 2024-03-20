@@ -41,8 +41,8 @@ def main(a: Array<string>) -> int {
 }
 
 // Converts byte to upper case if it is a lower case char
-def toUpperCase(b: byte) -> byte {
-    if (97 <= b && b <= 122) return byte.view(b - 32);
+def toLowerCase(b: byte) -> byte {
+    if (65 <= b && b <= 90) return byte.view(b + 32);
     return b;
 }
 
