@@ -4,7 +4,7 @@
 // Arm64 registers come in 32-bit and 64-bit variants
 enum DataWidth { W32, W64 }
 // Register shifts in data processing instructions
-enum RegShift { LSL, LSR, ASR } // TODO: ROR?
+enum RegShift { LSL, LSR, ASR, NONE } // NONE shift is reserved for instructions like mul, div
 // Register extensions in data processing instructions
 enum RegExtend { UXTB, UXTH, UXTW, UXTX, SXTB, SXTH, SXTW, SXTX }
 
@@ -147,6 +147,14 @@ class Arm64Assembler(w: DataWriter) {
 	def pos() -> int { return w.pos; }
 	private def ones = Arm64Gpr.new("", "", 0x1F); // register with all ones for regnum
 
+	def svc() -> this { emit(0xD4000001); }
+
+	// ------- Data processing instructions have 3 addressing modes -----------
+	// - immediate         - reg <- reg + imm12 (<< 12)
+	// - shifted register  - reg <- reg + reg (sh imm6)
+	// - extended register - reg <- reg + extend(reg) (sh imm3)
+	// ------------------------------------------------------------------------
+
 	def movd_r_i(rd: Arm64Reg, imm: u16) -> this { emit_r_i(rd, imm, 0xA5); }
 	def movq_r_i(rd: Arm64Reg, imm: u16) -> this { emit_r_i(rd, imm, 0x1A5); }
 	def movd_r_r(rd: Arm64Reg, rm: Arm64Reg) -> this {
@@ -162,12 +170,13 @@ class Arm64Assembler(w: DataWriter) {
 	def cmpq_r_i_i(rn: Arm64Reg, imm: u12, lsl12: u1) -> this {
 		emit_r_r_i_i(ones, rn, imm, lsl12, 0x1E2);
 	}
+	def cmpd_r_r_sh_i(rn: Arm64Reg, rm: Arm64Reg, sh: RegShift, imm: u5) -> this {
+		emit_r_r_r_sh_i(ones, rn, rm, sh, imm, 0x6B);
+	}
+	def cmpq_r_r_sh_i(rn: Arm64Reg, rm: Arm64Reg, sh: RegShift, imm: u6) -> this {
+		emit_r_r_r_sh_i(ones, rn, rm, sh, imm, 0xEB);
+	}
 
-	// ------- Data processing instructions have 3 addressing modes -----------
-	// - immediate         - reg <- reg + imm12 (<< 12)
-	// - shifted register  - reg <- reg + reg (sh imm6)
-	// - extended register - reg <- reg + extend(reg) (sh imm3)
-	// ------------------------------------------------------------------------
 	def addd_r_r_i_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12, lsl12: u1) -> this {
 		emit_r_r_i_i(rd, rn, imm, lsl12, 0x22);
 	}
@@ -206,23 +215,33 @@ class Arm64Assembler(w: DataWriter) {
 		emit_r_r_r_ex_i(rd, rn, rm, ex, imm, 0xCB);
 	}
 
-	// Some instructions have 32-bit opcodes because information packed tightly
-	def udivd_r_r_r(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) -> this { emit_r_r_r(rd, rn, rm, 0x1AC00800); }
-	def udivq_r_r_r(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) -> this { emit_r_r_r(rd, rn, rm, 0x9AC00800); }
+	def udivd_r_r_r(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) -> this {
+		emit_r_r_r_sh_i(rd, rn, rm, RegShift.NONE, 0x2, 0x1A);
+	}
+	def udivq_r_r_r(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) -> this {
+		emit_r_r_r_sh_i(rd, rn, rm, RegShift.NONE, 0x2, 0x9A);
+	}
 
-	def sdivd_r_r_r(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) -> this { emit_r_r_r(rd, rn, rm, 0x1AC00C00); }
-	def sdivq_r_r_r(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) -> this { emit_r_r_r(rd, rn, rm, 0x9AC00C00); }
+	def sdivd_r_r_r(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) -> this {
+		emit_r_r_r_sh_i(rd, rn, rm, RegShift.NONE, 0x3, 0x1A);
+	}
+	def sdivq_r_r_r(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) -> this {
+		emit_r_r_r_sh_i(rd, rn, rm, RegShift.NONE, 0x3, 0x9A);
+	}
 
-	def muld_r_r_r(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) -> this { emit_r_r_r(rd, rn, rm, 0x1B007C00); }
-	def mulq_r_r_r(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) -> this { emit_r_r_r(rd, rn, rm, 0x9B007C00); }
-
-	def svc() -> this { emit(0xD4000001); }
+	def muld_r_r_r(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) -> this {
+		emit_r_r_r_sh_i(rd, rn, rm, RegShift.LSL, 0x1F, 0x1B);
+	}
+	def mulq_r_r_r(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg) -> this {
+		emit_r_r_r_sh_i(rd, rn, rm, RegShift.LSL, 0x1F, 0x9B);
+	}
 
 	// ------------- Helper functions for emitting addressing modes  -----------
 
 	private def emit_r_i(rd: Arm64Reg, imm: u16, code: u9) {
 		emit((int.view(code) << 23) | (int.view(imm) << 5) | rd.regnum);	
 	}
+	// unfortunately, sometimes opcodes are u9
 	private def emit_r_r_i_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12, lsl12: u1, code: u9) {
 		emit((int.view(code) << 23) | (int.view(lsl12) << 22) | (int.view(imm) << 10)
 			| (int.view(rn.regnum) << 5) | rd.regnum);
@@ -236,9 +255,6 @@ class Arm64Assembler(w: DataWriter) {
 		imm: u3, code: byte) {
 		emit((int.view(code) << 24) | (int.view(imm) << 10) | (1 << 21) | (int.view(rm.regnum) << 16) |
 			(int.view(ex.tag) << 13) | (int.view(rn.regnum) << 5) | rd.regnum);
-	}
-	private def emit_r_r_r(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, code: int) {
-		emit((int.view(rm.regnum) << 15) | (int.view(rn.regnum) << 4) | rd.regnum | code);
 	}
 	private def emit(val: int) {
 		w.put_b32(val);

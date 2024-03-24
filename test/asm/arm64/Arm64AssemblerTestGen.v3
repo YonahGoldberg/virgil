@@ -4,6 +4,13 @@
 // Unit tester for the Arm64 Assembler. You don't want to run this file alone,
 // but execute it via test.bash.
 
+// We test many permutations of arguments for each instruction by doing the following:
+// 1. Emit assembly for the instructions we want to test, compile the assembly,
+// and objdump it to view the opcodes.
+// 2. Emit a corresponding virgil objdump file, which looks exactly the same,
+// but with virgil opcodes our assembly produces
+// 3. Diff the two objdump files
+
 // File containing one assembly instruction per line.
 var asmFd = 0;
 // File containing corresponding opcodes we produce of assembly instructions
@@ -35,6 +42,9 @@ def main(a: Array<string>) -> int {
 	test_mov();
 	test_add();
 	test_sub();
+	test_cmp();
+	test_mul();
+	test_div();
 
 	buf.puts(";;passed");
 	System.fileWriteK(asmFd, buf.buf, 0, buf.length);
@@ -70,21 +80,21 @@ def reverse(s: string) -> string {
 
 // Converts byte to lower case if it is a lower case char
 def toLowerCase(b: byte) -> byte {
-    if (65 <= b && b <= 90) return byte.view(b + 32);
-    return b;
+	if (65 <= b && b <= 90) return byte.view(b + 32);
+	return b;
 }
 
 def toHexString(x: int) -> string {
 	if (x == 0) return "0";
 	def hex_digits = "0123456789abcdef";
-    def result = StringBuilder.new();
+	def result = StringBuilder.new();
 
-    while (x > 0) {
-        def remainder = x % 16;
-        result.putc(hex_digits[remainder]);
+	while (x > 0) {
+		def remainder = x % 16;
+		result.putc(hex_digits[remainder]);
 		x /= 16;
 	}
-    return reverse(result.toString());
+	return reverse(result.toString());
 }
 
 // Extracts opcode from dataWriter into buffer with new line and flushes it to opcode file
@@ -141,7 +151,7 @@ def testOneArg<A>(mnemonic: string,
 	}
 }
 
-// Tests an instruction with two arguments, comma separated
+// Tests an instruction with two arguments
 // mnemonic - instruction to test
 // args - array of instruction args and function to print them to buf
 // emitAsm - emit opcode to DataWriter of instruction to test
@@ -166,7 +176,36 @@ def testTwoArgs<A, B>(mnemonic: string,
 	}
 }
 
-// Tests an instruction with four arguments, all comma separated
+// Tests an instruction with three
+// mnemonic - instruction to test
+// args - array of instruction args and function to print them to buf
+// emitAsm - emit opcode to DataWriter of instruction to test
+def testThreeArgs<A, B, C>(mnemonic: string,
+	emitAsm: (A, B, C) -> Arm64Assembler,
+	args1: (Array<A>, A -> void),
+	args2: (Array<B>, B -> void),
+	args3: (Array<C>, (B, C) -> void)) {
+	if (skip(mnemonic)) return;
+	for (a in args1.0) {
+		for (b in args2.0) {
+			for (c in args3.0) {
+				emitAsm(a, b, c);
+				writeOpcode();
+				buf.sp().sp().tab().puts(mnemonic).tab();
+				args1.1(a);
+				buf.csp();
+				args2.1(b);
+				args3.1(b, c);
+				buf.ln();
+				System.fileWriteK(opcodeFd, buf.buf, 0, buf.length);
+				System.fileWriteK(asmFd, buf.buf, 0, buf.length);
+				buf.reset();
+			}
+		}
+	}
+}
+
+// Tests an instruction with four arguments
 // mnemonic - instruction to test
 // args - array of instruction args and function to print them to buf
 // emitAsm - emit opcode to DataWriter of instruction to test
@@ -200,7 +239,7 @@ def testFourArgs<A, B, C, D>(mnemonic: string,
 	}
 }
 
-// Tests an instruction with five arguments, all comma separated except that last two
+// Tests an instruction with five arguments
 // are space separated.
 // mnemonic - instruction to test
 // args - array of instruction args and function to print them to buf
@@ -246,18 +285,20 @@ def testFiveArgs<A, B, C, D, E>(mnemonic: string,
 def renderSfr(r: Arm64Sfr) { buf.puts(r.name); }
 def renderGpr64(r: Arm64Gpr) { buf.puts(r.name64); }
 def renderGpr32(r: Arm64Gpr) { buf.puts(r.name32); }
+def renderGprGpr32(q: Arm64Gpr, r: Arm64Gpr) { buf.csp().puts(r.name32); }
+def renderGprGpr64(q: Arm64Gpr, r: Arm64Gpr) { buf.csp().puts(r.name64); }
 def renderExtendedReg(r: Arm64Gpr, ex: RegExtend) {
 	match (ex) {
 		UXTX, SXTX => buf.puts(r.name64);
 		_ => buf.puts(r.name32);
 	}
 }
-def renderShiftedReg32(r: Arm64Gpr, sh: RegShift) { buf.puts(r.name32); }
-def renderShiftedReg64(r: Arm64Gpr, sh: RegShift) { buf.puts(r.name64); }
+def renderShiftedGpr32(r: Arm64Gpr, sh: RegShift) { buf.puts(r.name32); }
+def renderShiftedGpr64(r: Arm64Gpr, sh: RegShift) { buf.puts(r.name64); }
 
 // A bunch of operation arguments
 def u16s: Array<u16> = [0, 1, 2, u16.view(-1), u16.view(-2), u16.view(-128), 96, 127, 128, 1023,
-    u16.view(-999), 32767, u16.view(-32768)];
+	u16.view(-999), 32767, u16.view(-32768)];
 def u12s: Array<u12> = [0x03A, 0x0F2, 0x0BA, 0x0C4];
 def u6s: Array<u6> = [0x0A, 0x1E, 0x2C, 0x1B, 0x3A];
 def u5s: Array<u5> = [0x0A, 0x1E, 0x0B, 0x17, 0x0F];
@@ -271,7 +312,9 @@ def rand_regs: Array<Arm64Gpr> = [Arm64Regs.R0, Arm64Regs.R10, Arm64Regs.R21, Ar
 def renderU16(i: u16) { buf.puts("#").putd(u32.view(i)); }
 def renderU12(i: u12) { buf.puts("#").putd(u32.view(i)); }
 def renderU6(i: u6) { buf.puts("#").putd(u32.view(i)); }
+def renderU6Shift(sh: RegShift, i: u6) { buf.puts(" #").putd(u32.view(i)); }
 def renderU5(i: u5) { buf.puts("#").putd(u32.view(i)); }
+def renderU5Shift(sh: RegShift, i: u5) { buf.puts(" #").putd(u32.view(i)); }
 def renderU3(i: u3) { 
 	if (i != 0) {
 		buf.puts("#").putd(u32.view(i));
@@ -294,22 +337,32 @@ def arg_r0 = ([Arm64Regs.R0], renderGpr32);
 def arg_u16 = (u16s, renderU16);
 def arg_u12 = (u12s, renderU12);
 def arg_u6 = (u6s, renderU6);
+def arg_u6_shift = (u6s, renderU6Shift);
 def arg_u5 = (u5s, renderU5);
+def arg_u5_shift = (u5s, renderU5Shift);
 def arg_u3 = (u3s, renderU3);
 def arg_u1 = (u1s, renderU1);
 def arg_shift = (shifts, renderShift);
 def arg_extend = (regExtends, renderExtend);
 def arg_r_extend = (rand_regs, renderExtendedReg);
-def arg_r32_shift = (rand_regs, renderShiftedReg32);
-def arg_r64_shift = (rand_regs, renderShiftedReg64);
+def arg_r32_shift = (rand_regs, renderShiftedGpr32);
+def arg_r64_shift = (rand_regs, renderShiftedGpr64);
+def arg_r32_reg = (rand_regs, renderGprGpr32);
+def arg_r64_reg = (rand_regs, renderGprGpr64);
 
 // Testing functions that take in a mnemonic and a corresponding assembler function
 def testd_r_u16 = testTwoArgs(_, _, arg_r32, arg_u16);
 def testq_r_u16 = testTwoArgs(_, _, arg_r64, arg_u16);
 def testd_r_r = testTwoArgs(_, _, arg_r32, arg_r32);
 def testq_r_r = testTwoArgs(_, _, arg_r64, arg_r64);
+def testd_r_i_i = testThreeArgs(_, _, arg_r32, arg_u12, arg_u1);
+def testq_r_i_i = testThreeArgs(_, _, arg_r64, arg_u12, arg_u1);
+def testd_r_r_r = testThreeArgs(_, _, arg_r32, arg_r32, arg_r32_reg);
+def testq_r_r_r = testThreeArgs(_, _, arg_r64, arg_r64, arg_r64_reg);
 def testd_r_r_i_i = testFourArgs(_, _, arg_r32, arg_r32, arg_u12, arg_u1);
 def testq_r_r_i_i = testFourArgs(_, _, arg_r64, arg_r64, arg_u12, arg_u1);
+def testd_r_r_sh_i = testFourArgs(_, _, arg_r32, arg_r32, arg_shift, arg_u5_shift);
+def testq_r_r_sh_i = testFourArgs(_, _, arg_r64, arg_r64, arg_shift, arg_u6_shift);
 def testd_r_r_r_sh_i = testFiveArgs(_, _, arg_r32, arg_r32, arg_r32_shift, arg_shift, arg_u5);
 def testq_r_r_r_sh_i = testFiveArgs(_, _, arg_r64, arg_r64, arg_r64_shift, arg_shift, arg_u6);
 def testd_r_r_r_ex_i = testFiveArgs(_, _, arg_r32, arg_r32, arg_r_extend, arg_extend, arg_u3);
@@ -339,4 +392,23 @@ def test_sub() {
 	testq_r_r_r_sh_i("sub", asm.subq_r_r_r_sh_i);
 	testd_r_r_r_ex_i("sub", asm.subd_r_r_r_ex_i);
 	testq_r_r_r_ex_i("sub", asm.subq_r_r_r_ex_i);
+}
+
+def test_cmp() {
+	testd_r_r_sh_i("cmp", asm.cmpd_r_r_sh_i);
+	testq_r_r_sh_i("cmp", asm.cmpq_r_r_sh_i);
+	testd_r_i_i("cmp", asm.cmpd_r_i_i);
+	testq_r_i_i("cmp", asm.cmpq_r_i_i);
+}
+
+def test_mul() {
+	testd_r_r_r("mul", asm.muld_r_r_r);
+	testq_r_r_r("mul", asm.mulq_r_r_r);
+}
+
+def test_div() {
+	testd_r_r_r("sdiv", asm.sdivd_r_r_r);
+	testq_r_r_r("sdiv", asm.sdivq_r_r_r);
+	testd_r_r_r("udiv", asm.udivd_r_r_r);
+	testq_r_r_r("udiv", asm.udivq_r_r_r);
 }
