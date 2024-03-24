@@ -4,9 +4,9 @@
 // Arm64 registers come in 32-bit and 64-bit variants
 enum DataWidth { W32, W64 }
 // Register shifts in data processing instructions
-enum RegShift { LSL, LSR, ASR, ROR }
+enum RegShift { LSL, LSR, ASR } // TODO: ROR?
 // Register extensions in data processing instructions
-enum RegExtend { SXTB, SXTH, SXTW, UXTB, UXTH, UXTW }
+enum RegExtend { UXTB, UXTH, UXTW, UXTX, SXTB, SXTH, SXTW, SXTX }
 
 // Base class for all Arm64 registers
 // id is an ID 0-32
@@ -18,7 +18,7 @@ class Arm64Gpr extends Arm64Reg {
 	def name32: string;
 	def name64: string;
 
-	new(name32, name64, regnum: u5) super(regnum) {}
+	new(name64, name32, regnum: u5) super(regnum) {}
 
 	def name(size: DataWidth) -> string {
 		match (size) {
@@ -37,10 +37,10 @@ class Arm64Sfr extends Arm64Reg {
 // Global constants for all Arm64 Registers
 component Arm64Regs {
 	def R0 = Arm64Gpr.new("x0", "w0", 0);		def R1 = Arm64Gpr.new("x1", "w1", 1);
-	def R2 = Arm64Gpr.new("x2", "w2", 2);		def R3 = Arm64Gpr.new("x3", "w1", 3);
-	def R4 = Arm64Gpr.new("x4", "w4", 4);		def R5 = Arm64Gpr.new("x5", "w1", 5);
-	def R6 = Arm64Gpr.new("x6", "w6", 6);		def R7 = Arm64Gpr.new("x7", "w1", 7);
-	def R8 = Arm64Gpr.new("x8", "w8", 8);		def R9 = Arm64Gpr.new("x9", "w1", 9);
+	def R2 = Arm64Gpr.new("x2", "w2", 2);		def R3 = Arm64Gpr.new("x3", "w3", 3);
+	def R4 = Arm64Gpr.new("x4", "w4", 4);		def R5 = Arm64Gpr.new("x5", "w5", 5);
+	def R6 = Arm64Gpr.new("x6", "w6", 6);		def R7 = Arm64Gpr.new("x7", "w7", 7);
+	def R8 = Arm64Gpr.new("x8", "w8", 8);		def R9 = Arm64Gpr.new("x9", "w9", 9);
 	def R10 = Arm64Gpr.new("x10", "w10", 10);	def R11 = Arm64Gpr.new("x11", "w11", 11);
 	def R12 = Arm64Gpr.new("x12", "w12", 12);	def R13 = Arm64Gpr.new("x13", "w13", 13);
 	def R14 = Arm64Gpr.new("x14", "w14", 14);	def R15 = Arm64Gpr.new("x15", "w15", 15); // PC
@@ -74,10 +74,9 @@ component Arm64Regs {
 	def GPRS = [
 		R0, R1, R2, R3, R4, R5, R6, R7, R8, R9, R10,
 		R11, R12, R13, R14, R16, R17, R18, R19, R20,
-		R21, R22, R23, R24, R25, R26, R27, R28, R29, R30,
-		RZR
+		R21, R22, R23, R24, R25, R26, R27, R28, R29, R30
 	];
-	
+
 	def SFRS = [
 		V0, V1, V2, V3, V4, V5, V6, V7, V8, V9, V10,
 		V11, V12, V13, V14, V15, V16, V17, V18, V19, V20,
@@ -146,24 +145,36 @@ class Arm64Assembler(w: DataWriter) {
 	var patcher: Arm64AddrPatcher;
 
 	def pos() -> int { return w.pos; }
+	private def ones = Arm64Gpr.new("", "", 0x1F); // register with all ones for regnum
 
-	def movd_r_i(rd: Arm64Reg, imm: u16) -> this { emit((0xA5 << 23) | (int.view(imm) << 5) | rd.regnum); }
-	def movq_r_i(rd: Arm64Reg, imm: u16) -> this { emit((0x1A5 << 23) | (imm << 5) | rd.regnum); }
-	def movd_r_r(rd: Arm64Reg, rm: Arm64Reg) -> this { emit((42 << 23) | (rm.regnum << 15) | rd.regnum); }
-	def movq_r_r(rd: Arm64Reg, rm: Arm64Reg) -> this { emit((170 << 23) | (rm.regnum << 15) | rd.regnum); }
+	def movd_r_i(rd: Arm64Reg, imm: u16) -> this { emit_r_i(rd, imm, 0xA5); }
+	def movq_r_i(rd: Arm64Reg, imm: u16) -> this { emit_r_i(rd, imm, 0x1A5); }
+	def movd_r_r(rd: Arm64Reg, rm: Arm64Reg) -> this {
+		emit_r_r_r_sh_i(rd, ones, rm, RegShift.LSL, 0, 0x2A);
+	}
+	def movq_r_r(rd: Arm64Reg, rm: Arm64Reg) -> this {
+		emit_r_r_r_sh_i(rd, ones, rm, RegShift.LSL, 0, 0xAA);
+	}
+
+	def cmpd_r_i_i(rn: Arm64Reg, imm: u12, lsl12: u1) -> this {
+		emit_r_r_i_i(ones, rn, imm, lsl12, 0xE2);
+	}
+	def cmpq_r_i_i(rn: Arm64Reg, imm: u12, lsl12: u1) -> this {
+		emit_r_r_i_i(ones, rn, imm, lsl12, 0x1E2);
+	}
 
 	// ------- Data processing instructions have 3 addressing modes -----------
-	// - immediate (suffix i)  			- reg <- reg + imm12 (<< 12)
-	// - shifted register (suffix sh)	- reg <- reg + reg (sh imm6)
-	// - extended register (suffix ex)  - reg <- reg + extend(reg) (sh imm3)
+	// - immediate         - reg <- reg + imm12 (<< 12)
+	// - shifted register  - reg <- reg + reg (sh imm6)
+	// - extended register - reg <- reg + extend(reg) (sh imm3)
 	// ------------------------------------------------------------------------
 	def addd_r_r_i_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12, lsl12: u1) -> this {
-		emit_r_r_i_i(rd, rn, imm, lsl12, 0x11);
+		emit_r_r_i_i(rd, rn, imm, lsl12, 0x22);
 	}
 	def addq_r_r_i_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12, lsl12: u1) -> this {
-		emit_r_r_i_i(rd, rn, imm, lsl12, 0x91);
+		emit_r_r_i_i(rd, rn, imm, lsl12, 0x122);
 	}
-	def addd_r_r_r_sh_i(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, sh: RegShift, imm: u6) -> this {
+	def addd_r_r_r_sh_i(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, sh: RegShift, imm: u5) -> this {
 		emit_r_r_r_sh_i(rd, rn, rm, sh, imm, 0xB); 
 	}
 	def addq_r_r_r_sh_i(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, sh: RegShift, imm: u6) -> this {
@@ -177,12 +188,12 @@ class Arm64Assembler(w: DataWriter) {
 	}
 
 	def subd_r_r_i_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12, lsl12: u1) -> this {
-		emit_r_r_i_i(rd, rn, imm, lsl12, 0x51);
+		emit_r_r_i_i(rd, rn, imm, lsl12, 0xA2);
 	}
 	def subq_r_r_i_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12, lsl12: u1) -> this {
-		emit_r_r_i_i(rd, rn, imm, lsl12, 0xD1);
+		emit_r_r_i_i(rd, rn, imm, lsl12, 0x1A2);
 	}
-	def subd_r_r_r_sh_i(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, sh: RegShift, imm: u6) -> this {
+	def subd_r_r_r_sh_i(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, sh: RegShift, imm: u5) -> this {
 		emit_r_r_r_sh_i(rd, rn, rm, sh, imm, 0x4B);
 	}
 	def subq_r_r_r_sh_i(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, sh: RegShift, imm: u6) -> this {
@@ -208,20 +219,26 @@ class Arm64Assembler(w: DataWriter) {
 	def svc() -> this { emit(0xD4000001); }
 
 	// ------------- Helper functions for emitting addressing modes  -----------
-	private def emit_r_r_i_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12, lsl12: u1, code: byte) {
-		emit((code << 23) | (int.view(lsl12) << 21) | (imm << 9) | (rn.regnum << 4) | rd.regnum);
+
+	private def emit_r_i(rd: Arm64Reg, imm: u16, code: u9) {
+		emit((int.view(code) << 23) | (int.view(imm) << 5) | rd.regnum);	
+	}
+	private def emit_r_r_i_i(rd: Arm64Reg, rn: Arm64Reg, imm: u12, lsl12: u1, code: u9) {
+		emit((int.view(code) << 23) | (int.view(lsl12) << 22) | (int.view(imm) << 10)
+			| (int.view(rn.regnum) << 5) | rd.regnum);
 	}
 	private def emit_r_r_r_sh_i(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, sh: RegShift, 
 		imm: u6, code: byte) {
-		emit((code << 23) | (sh.tag << 21) | (rm.regnum << 15) | (imm << 9) | (rn.regnum << 4) | rd.regnum);
+		emit((int.view(code) << 24) | (int.view(sh.tag) << 22) | (int.view(rm.regnum) << 16)
+			| (int.view(imm) << 10) | (int.view(rn.regnum) << 5) | rd.regnum);
 	}
 	private def emit_r_r_r_ex_i(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, ex: RegExtend,
-		sh: u3, code: byte) {
-		emit((code << 23) | (sh << 21) | (1 << 20) | (rm.regnum << 15) |
-			(ex.tag << 13) | (rn.regnum << 4) | rd.regnum);
+		imm: u3, code: byte) {
+		emit((int.view(code) << 24) | (int.view(imm) << 10) | (1 << 21) | (int.view(rm.regnum) << 16) |
+			(int.view(ex.tag) << 13) | (int.view(rn.regnum) << 5) | rd.regnum);
 	}
 	private def emit_r_r_r(rd: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, code: int) {
-		emit((rm.regnum << 15) | (rn.regnum << 4) | rd.regnum | code);
+		emit((int.view(rm.regnum) << 15) | (int.view(rn.regnum) << 4) | rd.regnum | code);
 	}
 	private def emit(val: int) {
 		w.put_b32(val);

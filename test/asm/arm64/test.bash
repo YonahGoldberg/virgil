@@ -35,7 +35,7 @@ objdump -d $OBJECT > $ASM_OBJDUMP
 check $?
 
 printf "  Comparing..."
-diff $ASM_OBJDUMP $VIRGIL_OBJDUMP > $DIFF_OBJDUMP
+diff -i -b $ASM_OBJDUMP $VIRGIL_OBJDUMP > $DIFF_OBJDUMP
 X=$?
 check $X
 

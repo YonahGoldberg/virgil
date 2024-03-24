@@ -2,17 +2,7 @@
 // See LICENSE for details of Apache 2.0 license.
 
 // Unit tester for the Arm64 Assembler. You don't want to run this file alone,
-// but execute it via test.bash. This tester associates every virgil assembly 
-// instruction with its corresponding mnemonic in the `as` assembler. It takes in two plus
-// arguments, the locations of two output files--one for virgil opcodes and one for corresponding
-// assembly instructions. The rest of the arguments are lists of the nmemonics of the instructions
-// to test. If there are only two arguments, we test all instructions.
-
-// The bash script located in this directory is responsible for
-// running this tester, taking the assembly output, compiling it to an objectfile , creating an 
-// objdump of it, and then parsing it to the same format as the virgil opcodes--one opcode per line.
-// We then just do a pairwise line-by-line difference on the two files to see which opcodes virgil
-// produces incorrectly.
+// but execute it via test.bash.
 
 // File containing one assembly instruction per line.
 var asmFd = 0;
@@ -27,7 +17,6 @@ var lineNum = 0;
 var args: Array<string>;
 // Mutable variable indicating what size register we render for assembly instructions
 // either 64-bit or 32-bit
-var width = DataWidth.W64;
 
 def main(a: Array<string>) -> int {
 	if (a.length < 2) {
@@ -43,17 +32,14 @@ def main(a: Array<string>) -> int {
 
 	writeObjdumpHeader(objectPath, opcodeFd);
 
-	test_movd();
-	buf.puts(";;passed");
-	outln(asmFd);
-	return 0;
-}
+	test_mov();
+	test_add();
+	test_sub();
 
-// Appends a new line to the buffer, flushes it to fd, and resets buffer
-def outln(fd: int) {
-	buf.ln();
-	System.fileWriteK(fd, buf.buf, 0, buf.length);
+	buf.puts(";;passed");
+	System.fileWriteK(asmFd, buf.buf, 0, buf.length);
 	buf.reset();
+	return 0;
 }
 
 // Returns true if we should skip testing this instruction
@@ -69,8 +55,9 @@ def writeObjdumpHeader(objectPath: string, opcodeFd: int) {
 	buf.ln();
 	buf.puts(Strings.builderOf(objectPath).puts(":\tfile format mach-o arm64\n\n").toString());
 	buf.puts("Disassembly of section __TEXT,__text:\n\n");
-	buf.puts("0000000000000000 <ltmp0>:");
-	outln(opcodeFd);
+	buf.puts("0000000000000000 <ltmp0>:\n");
+	System.fileWriteK(opcodeFd, buf.buf, 0, buf.length);
+	buf.reset();
 }
 
 def reverse(s: string) -> string {
@@ -129,8 +116,10 @@ def writeOpcode() {
 def testNoArgs(mnemonic: string, emitAsm: void -> Arm64Assembler) {
 	emitAsm();
 	writeOpcode();
-	buf.puts(mnemonic);
-	outln(asmFd);
+	buf.sp().sp().tab().puts(mnemonic);
+	System.fileWriteK(opcodeFd, buf.buf, 0, buf.length);
+	System.fileWriteK(asmFd, buf.buf, 0, buf.length);
+	buf.reset();
 }
 
 // Tests an instruction with one argument
@@ -138,15 +127,17 @@ def testNoArgs(mnemonic: string, emitAsm: void -> Arm64Assembler) {
 // args - array of instruction args and function to print them to buf
 // emitAsm - emit opcode to DataWriter of instruction to test
 def testOneArg<A>(mnemonic: string,
-	args: (Array<A>, A -> void),
-	emitAsm: A -> Arm64Assembler) {
+	emitAsm: A -> Arm64Assembler,
+	args: (Array<A>, A -> void)) {
 	if (skip(mnemonic)) return;
 	for (a in args.0) {
 		emitAsm(a);
 		writeOpcode();
-		buf.puts(mnemonic).sp();
+		buf.sp().sp().tab().puts(mnemonic).tab();
 		args.1(a);
-		outln(asmFd);
+		System.fileWriteK(opcodeFd, buf.buf, 0, buf.length);
+		System.fileWriteK(asmFd, buf.buf, 0, buf.length);
+		buf.reset();
 	}
 }
 
@@ -155,9 +146,9 @@ def testOneArg<A>(mnemonic: string,
 // args - array of instruction args and function to print them to buf
 // emitAsm - emit opcode to DataWriter of instruction to test
 def testTwoArgs<A, B>(mnemonic: string,
+	emitAsm: (A, B) -> Arm64Assembler,
 	args1: (Array<A>, A -> void),
-	args2: (Array<B>, B -> void),
-	emitAsm: (A, B) -> Arm64Assembler) {
+	args2: (Array<B>, B -> void)) {
 	if (skip(mnemonic)) return;
 	for (a in args1.0) {
 		for (b in args2.0) {
@@ -165,7 +156,7 @@ def testTwoArgs<A, B>(mnemonic: string,
 			writeOpcode();
 			buf.sp().sp().tab().puts(mnemonic).tab();
 			args1.1(a);
-			buf.puts(", ");
+			buf.csp();
 			args2.1(b);
 			buf.ln();
 			System.fileWriteK(opcodeFd, buf.buf, 0, buf.length);
@@ -175,39 +166,177 @@ def testTwoArgs<A, B>(mnemonic: string,
 	}
 }
 
+// Tests an instruction with four arguments, all comma separated
+// mnemonic - instruction to test
+// args - array of instruction args and function to print them to buf
+// emitAsm - emit opcode to DataWriter of instruction to test
+def testFourArgs<A, B, C, D>(mnemonic: string,
+	emitAsm: (A, B, C, D) -> Arm64Assembler,
+	args1: (Array<A>, A -> void),
+	args2: (Array<B>, B -> void),
+	args3: (Array<C>, C -> void),
+	args4: (Array<D>, (C, D) -> void)) {
+	if (skip(mnemonic)) return;
+	for (a in args1.0) {
+		for (b in args2.0) {
+			for (c in args3.0) {
+				for (d in args4.0) {
+					emitAsm(a, b, c, d);
+					writeOpcode();
+					buf.sp().sp().tab().puts(mnemonic).tab();
+					args1.1(a);
+					buf.csp();
+					args2.1(b);
+					buf.csp();
+					args3.1(c);
+					args4.1(c, d);
+					buf.ln();
+					System.fileWriteK(opcodeFd, buf.buf, 0, buf.length);
+					System.fileWriteK(asmFd, buf.buf, 0, buf.length);
+					buf.reset();
+				}
+			}
+		}
+	}
+}
+
+// Tests an instruction with five arguments, all comma separated except that last two
+// are space separated.
+// mnemonic - instruction to test
+// args - array of instruction args and function to print them to buf
+// emitAsm - emit opcode to DataWriter of instruction to test
+def testFiveArgs<A, B, C, D, E>(mnemonic: string,
+	emitAsm: (A, B, C, D, E) -> Arm64Assembler,
+	args1: (Array<A>, A -> void),
+	args2: (Array<B>, B -> void),
+	args3: (Array<C>, (C, D) -> void),
+	args4: (Array<D>, D -> void),
+	args5: (Array<E>, E -> void)) {
+	if (skip(mnemonic)) return;
+	for (a in args1.0) {
+		for (b in args2.0) {
+			for (c in args3.0) {
+				for (d in args4.0) {
+					for (e in args5.0) {
+						emitAsm(a, b, c, d, e);
+						writeOpcode();
+						buf.sp().sp().tab().puts(mnemonic).tab();
+						args1.1(a);
+						buf.csp();
+						args2.1(b);
+						buf.csp();
+						args3.1(c, d);
+						buf.csp();
+						args4.1(d);
+						buf.sp();
+						args5.1(e);
+						buf.ln();
+						System.fileWriteK(opcodeFd, buf.buf, 0, buf.length);
+						System.fileWriteK(asmFd, buf.buf, 0, buf.length);
+						buf.reset();
+					}
+				}
+			}
+		}
+	}
+}
+
 // A bunch of rendering functions so that we can match instructions we assemble
 // to mnemonics that `as` uses
 def renderSfr(r: Arm64Sfr) { buf.puts(r.name); }
-def renderGpr(r: Arm64Gpr) { buf.puts(r.name(width)); }
+def renderGpr64(r: Arm64Gpr) { buf.puts(r.name64); }
 def renderGpr32(r: Arm64Gpr) { buf.puts(r.name32); }
+def renderExtendedReg(r: Arm64Gpr, ex: RegExtend) {
+	match (ex) {
+		UXTX, SXTX => buf.puts(r.name64);
+		_ => buf.puts(r.name32);
+	}
+}
+def renderShiftedReg32(r: Arm64Gpr, sh: RegShift) { buf.puts(r.name32); }
+def renderShiftedReg64(r: Arm64Gpr, sh: RegShift) { buf.puts(r.name64); }
 
-// random immediates for testing.
-def imms = [0, 1, 2, -1, -2, -128, 127, 128, 253, 255, 1023, 65535, -32767, 0x11223344, 0x55443322, 0x99aabbcc];
-// 16-bit immediates for testing ops like mov, which allow max 16-bit imms.
+// A bunch of operation arguments
 def u16s: Array<u16> = [0, 1, 2, u16.view(-1), u16.view(-2), u16.view(-128), 96, 127, 128, 1023,
     u16.view(-999), 32767, u16.view(-32768)];
+def u12s: Array<u12> = [0x03A, 0x0F2, 0x0BA, 0x0C4];
+def u6s: Array<u6> = [0x0A, 0x1E, 0x2C, 0x1B, 0x3A];
+def u5s: Array<u5> = [0x0A, 0x1E, 0x0B, 0x17, 0x0F];
+def u3s: Array<u3> = [0, 1, 2, 3, 4]; // extend ops only take 0 - 4, not all u3s.
+def u1s: Array<u1> = [0, 1];
+def shifts = [RegShift.LSL, RegShift.LSR, RegShift.ASR]; // TODO: ROR?
+def regExtends = [RegExtend.SXTB, RegExtend.SXTH, RegExtend.SXTW,
+	RegExtend.UXTB, RegExtend.UXTH, RegExtend.UXTW];
+def rand_regs: Array<Arm64Gpr> = [Arm64Regs.R0, Arm64Regs.R10, Arm64Regs.R21, Arm64Regs.R30];
 
-def renderInt(i: int) {
-    buf.puts("#");
-	buf.putd(i);
+def renderU16(i: u16) { buf.puts("#").putd(u32.view(i)); }
+def renderU12(i: u12) { buf.puts("#").putd(u32.view(i)); }
+def renderU6(i: u6) { buf.puts("#").putd(u32.view(i)); }
+def renderU5(i: u5) { buf.puts("#").putd(u32.view(i)); }
+def renderU3(i: u3) { 
+	if (i != 0) {
+		buf.puts("#").putd(u32.view(i));
+	}
 }
-def renderU16(i: u16) {
-	buf.puts("#");
-	buf.putd(u32.view(i));
+// U1s are indicators on shifting left 12 for data
+def renderU1(imm: u12, i: u1) {
+	if (i == 1) {
+		buf.csp().puts("lsl #12").tab().puts("; =").putd(u32.view(imm) << 12);
+	}
 }
+
+def renderShift(sh: RegShift) { buf.puts(sh.name); }
+def renderExtend(ex: RegExtend) { buf.puts(ex.name); }
 
 // Arguments to assembly instructions paired with a function to print them to buf
-def arg_r0 = ([Arm64Regs.R0], renderGpr);
-def arg_1_u16 = ([u16.view(1)], renderU16);
-def arg_r = (Arm64Regs.GPRS, renderGpr);
-def arg_i = (imms, renderInt);
+def arg_r32 = (rand_regs, renderGpr32);
+def arg_r64 = (rand_regs, renderGpr64);
+def arg_r0 = ([Arm64Regs.R0], renderGpr32);
 def arg_u16 = (u16s, renderU16);
+def arg_u12 = (u12s, renderU12);
+def arg_u6 = (u6s, renderU6);
+def arg_u5 = (u5s, renderU5);
+def arg_u3 = (u3s, renderU3);
+def arg_u1 = (u1s, renderU1);
+def arg_shift = (shifts, renderShift);
+def arg_extend = (regExtends, renderExtend);
+def arg_r_extend = (rand_regs, renderExtendedReg);
+def arg_r32_shift = (rand_regs, renderShiftedReg32);
+def arg_r64_shift = (rand_regs, renderShiftedReg64);
 
 // Testing functions that take in a mnemonic and a corresponding assembler function
-def test_r_u16 = testTwoArgs(_, arg_r, arg_u16, _);
-def test_r_r = testTwoArgs(_, arg_r0, arg_r0, _);
+def testd_r_u16 = testTwoArgs(_, _, arg_r32, arg_u16);
+def testq_r_u16 = testTwoArgs(_, _, arg_r64, arg_u16);
+def testd_r_r = testTwoArgs(_, _, arg_r32, arg_r32);
+def testq_r_r = testTwoArgs(_, _, arg_r64, arg_r64);
+def testd_r_r_i_i = testFourArgs(_, _, arg_r32, arg_r32, arg_u12, arg_u1);
+def testq_r_r_i_i = testFourArgs(_, _, arg_r64, arg_r64, arg_u12, arg_u1);
+def testd_r_r_r_sh_i = testFiveArgs(_, _, arg_r32, arg_r32, arg_r32_shift, arg_shift, arg_u5);
+def testq_r_r_r_sh_i = testFiveArgs(_, _, arg_r64, arg_r64, arg_r64_shift, arg_shift, arg_u6);
+def testd_r_r_r_ex_i = testFiveArgs(_, _, arg_r32, arg_r32, arg_r_extend, arg_extend, arg_u3);
+def testq_r_r_r_ex_i = testFiveArgs(_, _, arg_r64, arg_r64, arg_r_extend, arg_extend, arg_u3);
 
 // Testing functions for specific assembly instructions
-def test_movd() {
-	test_r_u16("mov", asm.movd_r_i);
+def test_mov() {
+	testd_r_u16("mov", asm.movd_r_i);
+	testq_r_u16("mov", asm.movq_r_i);
+	testd_r_r("mov", asm.movd_r_r);
+	testq_r_r("mov", asm.movq_r_r);
+}
+
+def test_add() {
+	testd_r_r_i_i("add", asm.addd_r_r_i_i);
+	testq_r_r_i_i("add", asm.addq_r_r_i_i);
+	testd_r_r_r_sh_i("add", asm.addd_r_r_r_sh_i);
+	testq_r_r_r_sh_i("add", asm.addq_r_r_r_sh_i);
+	testd_r_r_r_ex_i("add", asm.addd_r_r_r_ex_i);
+	testq_r_r_r_ex_i("add", asm.addq_r_r_r_ex_i);
+}
+
+def test_sub() {
+	testd_r_r_i_i("sub", asm.subd_r_r_i_i);
+	testq_r_r_i_i("sub", asm.subq_r_r_i_i);
+	testd_r_r_r_sh_i("sub", asm.subd_r_r_r_sh_i);
+	testq_r_r_r_sh_i("sub", asm.subq_r_r_r_sh_i);
+	testd_r_r_r_ex_i("sub", asm.subd_r_r_r_ex_i);
+	testq_r_r_r_ex_i("sub", asm.subq_r_r_r_ex_i);
 }
