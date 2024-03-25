@@ -287,7 +287,7 @@ def renderGpr64(r: Arm64Gpr) { buf.puts(r.name64); }
 def renderGpr32(r: Arm64Gpr) { buf.puts(r.name32); }
 def renderGprGpr32(q: Arm64Gpr, r: Arm64Gpr) { buf.csp().puts(r.name32); }
 def renderGprGpr64(q: Arm64Gpr, r: Arm64Gpr) { buf.csp().puts(r.name64); }
-def renderExtendedReg(r: Arm64Gpr, ex: RegExtend) {
+def renderExtendedReg(r: Arm64Gpr, ex: DataRegExtend) {
 	match (ex) {
 		UXTX, SXTX => buf.puts(r.name64);
 		_ => buf.puts(r.name32);
@@ -300,17 +300,19 @@ def renderShiftedGpr64(r: Arm64Gpr, sh: RegShift) { buf.puts(r.name64); }
 def u16s: Array<u16> = [0, 1, 2, u16.view(-1), u16.view(-2), u16.view(-128), 96, 127, 128, 1023,
 	u16.view(-999), 32767, u16.view(-32768)];
 def u12s: Array<u12> = [0x03A, 0x0F2, 0x0BA, 0x0C4];
+def i9s: Array<i9> = [0x5d, 0xb6, 0x3f, 0xb1, 0x1FF];
 def u6s: Array<u6> = [0x0A, 0x1E, 0x2C, 0x1B, 0x3A];
 def u5s: Array<u5> = [0x0A, 0x1E, 0x0B, 0x17, 0x0F];
 def u3s: Array<u3> = [0, 1, 2, 3, 4]; // extend ops only take 0 - 4, not all u3s.
 def u1s: Array<u1> = [0, 1];
 def shifts = [RegShift.LSL, RegShift.LSR, RegShift.ASR]; // TODO: ROR?
-def regExtends = [RegExtend.SXTB, RegExtend.SXTH, RegExtend.SXTW,
-	RegExtend.UXTB, RegExtend.UXTH, RegExtend.UXTW];
+def DataRegExtends = [DataRegExtend.SXTB, DataRegExtend.SXTH, DataRegExtend.SXTW,
+	DataRegExtend.UXTB, DataRegExtend.UXTH, DataRegExtend.UXTW];
 def rand_regs: Array<Arm64Gpr> = [Arm64Regs.R0, Arm64Regs.R10, Arm64Regs.R21, Arm64Regs.R30];
 
 def renderU16(i: u16) { buf.puts("#").putd(u32.view(i)); }
 def renderU12(i: u12) { buf.puts("#").putd(u32.view(i)); }
+def renderI9(r: Arm64Reg, i: i9) { buf.puts('#').putd(u32.view(i)); }
 def renderU6(i: u6) { buf.puts("#").putd(u32.view(i)); }
 def renderU6Shift(sh: RegShift, i: u6) { buf.puts(" #").putd(u32.view(i)); }
 def renderU5(i: u5) { buf.puts("#").putd(u32.view(i)); }
@@ -328,7 +330,7 @@ def renderU1(imm: u12, i: u1) {
 }
 
 def renderShift(sh: RegShift) { buf.puts(sh.name); }
-def renderExtend(ex: RegExtend) { buf.puts(ex.name); }
+def renderExtend(ex: DataRegExtend) { buf.puts(ex.name); }
 
 // Arguments to assembly instructions paired with a function to print them to buf
 def arg_r32 = (rand_regs, renderGpr32);
@@ -336,6 +338,7 @@ def arg_r64 = (rand_regs, renderGpr64);
 def arg_r0 = ([Arm64Regs.R0], renderGpr32);
 def arg_u16 = (u16s, renderU16);
 def arg_u12 = (u12s, renderU12);
+def arg_i9 = (i9s, renderI9);
 def arg_u6 = (u6s, renderU6);
 def arg_u6_shift = (u6s, renderU6Shift);
 def arg_u5 = (u5s, renderU5);
@@ -356,6 +359,8 @@ def testq_r_u16 = testTwoArgs(_, _, arg_r64, arg_u16);
 def testd_r_r = testTwoArgs(_, _, arg_r32, arg_r32);
 def testq_r_r = testTwoArgs(_, _, arg_r64, arg_r64);
 def testd_r_i_i = testThreeArgs(_, _, arg_r32, arg_u12, arg_u1);
+def testd_r_r_i = testThreeArgs(_, _, arg_r32, arg_r32, arg_i9);
+def testq_r_r_i = testThreeArgs(_, _, arg_r64, arg_r64, arg_i9);
 def testq_r_i_i = testThreeArgs(_, _, arg_r64, arg_u12, arg_u1);
 def testd_r_r_r = testThreeArgs(_, _, arg_r32, arg_r32, arg_r32_reg);
 def testq_r_r_r = testThreeArgs(_, _, arg_r64, arg_r64, arg_r64_reg);
