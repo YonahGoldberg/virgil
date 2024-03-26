@@ -163,28 +163,30 @@ class Arm64Assembler(w: DataWriter) {
 	// -------------------------------------------------------------------------------------------------------------
 
 	def ldrd_r_r_i(rt: Arm64Reg, rn: Arm64Reg, imm: i9) -> this {
-		emit((0x5C2 << 21) | (int.view(imm) << 12) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
+		emit((0x5C2 << 21) | (int.view(u9.view(imm)) << 12) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
 	}
 	def ldrq_r_r_i(rt: Arm64Reg, rn: Arm64Reg, imm: i9) -> this {
-		emit((0x7C2 << 21) | (int.view(imm) << 12) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
+		emit((0x7C2 << 21) | (int.view(u9.view(imm)) << 12) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
 	}
 	def ldrpostd_r_r_i(rt: Arm64Reg, rn: Arm64Reg, imm: i9) -> this {
-		emit((0x5C2 << 21) | (int.view(imm) << 12) | (1 << 10) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
+		emit((0x5C2 << 21) | (int.view(u9.view(imm)) << 12) | (1 << 10) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
 	}
 	def ldrpostq_r_r_i(rt: Arm64Reg, rn: Arm64Reg, imm: i9) -> this {
-		emit((0x7C2 << 21) | (int.view(imm) << 12) | (1 << 10) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
+		emit((0x7C2 << 21) | (int.view(u9.view(imm)) << 12) | (1 << 10) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
 	}
 	def ldrpred_r_r_i(rt: Arm64Reg, rn: Arm64Reg, imm: i9) -> this {
-		emit((0x5C2 << 21) | (int.view(imm) << 12) | (4 << 10) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
+		emit((0x5C2 << 21) | (int.view(u9.view(imm)) << 12) | (3 << 10) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
 	}
 	def ldrpreq_r_r_i(rt: Arm64Reg, rn: Arm64Reg, imm: i9) -> this {
-		emit((0x7C2 << 21) | (int.view(imm) << 12) | (4 << 10) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
+		emit((0x7C2 << 21) | (int.view(u9.view(imm)) << 12) | (3 << 10) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
 	}
+	// imm must be a multiple of 4 for this variant
 	def ldrunsignedd_r_r_i(rt: Arm64Reg, rn: Arm64Reg, imm: u12) -> this {
-		emit((0x2E5 << 22) | (int.view(imm) << 10) | (int.view(rn.regnum) << 5) | int.view(rt.regnum));
+		emit((0x2E5 << 22) | (int.view(imm / 4) << 10) | (int.view(rn.regnum) << 5) | int.view(rt.regnum));
 	}
+	// imm but be a multiple of 8 for this variant
 	def ldrunsignedq_r_r_i(rt: Arm64Reg, rn: Arm64Reg, imm: u12) -> this {
-		emit((0x3E5 << 22) | (int.view(imm) << 10) | (int.view(rn.regnum) << 5) | int.view(rt.regnum));
+		emit((0x3E5 << 22) | (int.view(imm / 8) << 10) | (int.view(rn.regnum) << 5) | int.view(rt.regnum));
 	}
 	def ldrliterald_r_i(rt: Arm64Reg, imm: u9) -> this {
 		emit((0xC << 24) | (int.view(imm) << 5) | int.view(rt.regnum));
@@ -202,28 +204,30 @@ class Arm64Assembler(w: DataWriter) {
 	}
 
 	def strd_r_r_i(rt: Arm64Reg, rn: Arm64Reg, imm: i9) -> this {
-		emit((0x5C0 << 21) | (int.view(imm) << 12) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
+		emit((0x5C0 << 21) | (int.view(u9.view(imm)) << 12) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
 	}
 	def strq_r_r_i(rt: Arm64Reg, rn: Arm64Reg, imm: i9) -> this {
-		emit((0x7C0 << 21) | (int.view(imm) << 12) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
+		emit((0x7C0 << 21) | (int.view(u9.view(imm)) << 12) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
 	}
 	def strpostd_r_r_i(rt: Arm64Reg, rn: Arm64Reg, imm: i9) -> this {
-		emit((0x5C0 << 21) | (int.view(imm) << 12) | (1 << 10) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
+		emit((0x5C0 << 21) | (int.view(u9.view(imm)) << 12) | (1 << 10) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
 	}
 	def strpostq_r_r_i(rt: Arm64Reg, rn: Arm64Reg, imm: i9) -> this {
-		emit((0x7C0 << 21) | (int.view(imm) << 12) | (1 << 10) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
+		emit((0x7C0 << 21) | (int.view(u9.view(imm)) << 12) | (1 << 10) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
 	}
 	def strpred_r_r_i(rt: Arm64Reg, rn: Arm64Reg, imm: i9) -> this {
-		emit((0x5C0 << 21) | (int.view(imm) << 12) | (4 << 10) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
+		emit((0x5C0 << 21) | (int.view(u9.view(imm)) << 12) | (3 << 10) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
 	}
 	def strpreq_r_r_i(rt: Arm64Reg, rn: Arm64Reg, imm: i9) -> this {
-		emit((0x7C0 << 21) | (int.view(imm) << 12) | (4 << 10) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
+		emit((0x7C0 << 21) | (int.view(u9.view(imm)) << 12) | (3 << 10) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
 	}
+	// imm must be a multiple of 4 for this variant
 	def strunsignedd_r_r_i(rt: Arm64Reg, rn: Arm64Reg, imm: u12) -> this {
-		emit((0x2E4 << 22) | (int.view(imm) << 10) | (int.view(rn.regnum) << 5) | int.view(rt.regnum));
+		emit((0x2E4 << 22) | (int.view(imm / 4) << 10) | (int.view(rn.regnum) << 5) | int.view(rt.regnum));
 	}
+	// imm must be a multiple of 8 for this variant
 	def strunsignedq_r_r_i(rt: Arm64Reg, rn: Arm64Reg, imm: u12) -> this {
-		emit((0x3E4 << 22) | (int.view(imm) << 10) | (int.view(rn.regnum) << 5) | int.view(rt.regnum));
+		emit((0x3E4 << 22) | (int.view(imm / 8) << 10) | (int.view(rn.regnum) << 5) | int.view(rt.regnum));
 	}
 	def strd_r_r_r_ex_i(rt: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, ex: MemRegExtend, imm: u1) -> this {
 		emit((0x5C1 << 21) | (int.view(rm.regnum) << 16) | (int.view(ex.id) << 13) |
