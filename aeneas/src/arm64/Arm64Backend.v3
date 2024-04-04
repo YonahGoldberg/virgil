@@ -59,6 +59,10 @@ class Arm64Backend extends MachBackend {
 		else allocateRegs = SimpleRegAlloc.new(MRegs.SET, codegen).allocate;
 	}
 
+	def unimplemented() {
+		mach.fail("unimplemented");
+	}
+
 	// Override MachBackend	
 
 	def genEntryStub() {
@@ -66,21 +70,21 @@ class Arm64Backend extends MachBackend {
 	}
 
 	def genAllocStub() {
-		mach.fail("not implemented");
+		unimplemented();
 	}
 
 	def genCodeFromSsa() {}
 
 	def patchCodeAddr(w: DataWriter, a: Addr, posAddr: int) {
-		mach.fail("not implemented");
+		unimplemented();
 	}
 
 	def genSignalHandlerStub() {
-		mach.fail("not implemented");
+		unimplemented();
 	}
 
 	def genFatalStub(ex: string, addr: Addr) {
-		mach.fail("not implemented");
+		unimplemented();
 	}
 
 	// Adds Arm64 specific frame size to MachFrame
@@ -177,6 +181,6 @@ class Arm64Backend extends MachBackend {
 	}
 
 	def genMainInit(frame: MachFrame) {
-		mach.fail("not implemented");
+		unimplemented();
 	}
 }
