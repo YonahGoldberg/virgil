@@ -17,7 +17,7 @@ component Arm64Common {
 		config.IntConvertFPosSaturates = false;
 		config.FloatConvertIUnsigned = false;
 		return config;
-  	}
+	}
 
 	def KERNEL_PARAM_REGS: Array<Arm64Reg> = [];
 	def KERNEL_RETURN_REGS: Array<Arm64Reg> = [];
@@ -25,6 +25,7 @@ component Arm64Common {
 
 // TODO: negative object headers
 class Arm64Backend extends MachBackend {
+	var asm: Arm64MacroAssembler; // TODO
 	def test: bool;
 	var patcher: Arm64AddrPatcher;
 	var asm: Arm64Assembler;
@@ -53,63 +54,33 @@ class Arm64Backend extends MachBackend {
 		asm = Arm64Assembler.new(w);
 		patcher = Arm64AddrPatcher.new(w, mach, asm);
 		codegen = SsaArm64Gen.new(context, mach, asm, w, dwarf);
-
 		if (compiler.useGlobalRegAllocMatcher != VstMatcher.None) allocateRegsGlobal = GlobalRegAlloc.new(MRegs.SET, codegen).allocate;
 		if (compiler.LocalRegAlloc) allocateRegs = LocalRegAlloc.new(MRegs.SET, codegen).allocate;
 		else allocateRegs = SimpleRegAlloc.new(MRegs.SET, codegen).allocate;
 	}
 
-	// Override MachBackend
+	// Override MachBackend	
+
 	def genEntryStub() {
-		def main = prog.getMain().asMethod();
-		def frame = computeFrameSize(getFrame(main.ssa));
-		genTestInputs(main, frame);
-
-		def mainAddr = mach.addrOfMethod(main);
-		asm.bl_i(patcher.REL_IMM26_MARKER);
-		patcher.record(mainAddr);
-
-		// write return value to stdout if this is a test
-		genTestOutput(main, frame);
-
-		// Exit successfully
-		asm_exit_code(0);
+		mach.fail("not implemented");
 	}
-	def genCodeFromSsa() {
-		var frame = getFrame(context.method.ssa);
-		var rtsrc = mach.runtime.src;
-		if (rtsrc != null) rtsrc.curFrame = frame;
-		codegen.generate(context.method, frame);
-		if (context.shouldUseGlobalRegAlloc()) allocateRegsGlobal();
-		else allocateRegs();
-		computeFrameSize(frame);
-		if (rtsrc != null) rtsrc.recordMethodStart(w.endOffset(), context.method.source, frame);
-		codegen.assembleInstrs();
-		if (rtsrc != null) rtsrc.recordFrameEnd(w.endOffset());
+
+	def genAllocStub() {
+		mach.fail("not implemented");
 	}
-	def patchCodeAddrArm64(w: DataWriter, a: Addr, kind: Arm64PatchKind, posAddr: int) {
-		def abs = mach.absolute(a);
-		if (CLOptions.PRINT_PATCH.val) {
-			TerminalBuffer.new()
-				.puts("patch-code @0x")
-				.putx(posAddr)
-				.puts(" <- ")
-				.putcv(a, null)
-				.puts(" = 0x")
-				.putx(abs)
-				.outln();
-		}
-		patcher.patch(kind, posAddr, abs);
+
+	def genCodeFromSsa() {}
+
+	def patchCodeAddr(w: DataWriter, a: Addr, posAddr: int) {
+		mach.fail("not implemented");
 	}
+
 	def genSignalHandlerStub() {
-		unimplemented();
+		mach.fail("not implemented");
 	}
+
 	def genFatalStub(ex: string, addr: Addr) {
-		unimplemented();
-	}
-	// Returns call frame for an SsaGraph
-	def getFrame(ssa: SsaGraph) -> MachFrame {
-		return MachFrame.new(Arm64VirgilCallConv.getForGraph(mach, ssa), mach.data.addrAlign, mach.refSize);
+		mach.fail("not implemented");
 	}
 
 	// Adds Arm64 specific frame size to MachFrame
@@ -190,4 +161,22 @@ class Arm64Backend extends MachBackend {
 	def asm_exit_r(r: Arm64Gpr);
 	def asm_exit_code(code: int);
 	def genTestOutput(main: IrMethod, frame: MachFrame);
+
+	// Helper functions
+
+	// Returns call frame for an SsaGraph
+	def getFrame(ssa: SsaGraph) -> MachFrame {
+		return MachFrame.new(Arm64VirgilCallConv.getForGraph(mach, ssa), mach.data.addrAlign, mach.refSize);
+	}
+
+	// Adds Arm64 specific frame size to MachFrame
+	// XXX 64 -bits for ever local, optimize?. Addition for return address?
+	def computeFrameSize(frame: MachFrame) -> MachFrame {
+		frame.frameSize = mach.alignTo(frame.slots() * mach.refSize + mach.code.addressSize, mach.stackAlign);
+		return frame;
+	}
+
+	def genMainInit(frame: MachFrame) {
+		mach.fail("not implemented");
+	}
 }
