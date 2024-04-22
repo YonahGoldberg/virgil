@@ -1,75 +1,114 @@
 // Copyright 2024 Virgil Authors. All rights reserved.
 // See LICENSE for details of Apache 2.0 license.
 
-// Arm64 instructions are ints that look like <arg2><arg1><am><code>
+// Arm64 instructions are ints that look like <width><mode arg><mode><code>
 // where each part of the instruction is a byte
 
-// masks
-def MASK_CODE = 0xff;
-def MASK_AM = 0xff00;
-def MASK_ARG1 = 0xff0000;
-def MASK_ARG2 = 0xff000000;
-
-// shifts
-def SHIFT_CODE: byte = 0;
-def SHIFT_AM: byte = 8;
-def SHIFT_ARG1: byte = 16;
-def SHIFT_ARG2: byte = 24;
-
 // codes
-def I_ADDD: byte = 0x01;	def I_ADDQ: byte = 0x11;
-def I_MOVZ: byte = 0x02;
-def I_MOVK: byte = 0x03;
-def I_LDR: byte = 0x04;
-def I_STR: byte = 0x05;
-
-def I_QD_DIFF: byte = I_ADDQ - I_ADDD;
+def MASK_CODE = 0xff;
+def I_ADD = 0x00;
+def I_MOVZ = 0x01;
+def I_MOVK = 0x02;
+def I_LDR = 0x03;
+def I_STR = 0x04;
 
 // addressing modes
-def AM_NONE: byte = 0x00;
-def AM_R_R_I_I: byte = 0x01;
-def AM_R_R_R_SH_I: byte = 0x02;
-def AM_R_R_R_EX_I: byte = 0x03;
+def MASK_AM = 0xff00;
+def SHIFT_AM: byte = 8;
+def AM_NONE = 0x00;
+def AM_IMM = 0x01;
+def AM_SHIFTED_IMM = 0x02;
+def AM_EXTENDED_REG_LSL = 0x03;
+def AM_SHIFTED_REG_LSL = 0x04;
+def AM_REG = 0x05;
 
-// arguments
-def ARG_NONE: byte = 0x00;
-def ARG_SH_NONE: byte = 0x01;
-def ARG_SH_LSL: byte = 0x02;
-def ARG_SH_LSR: byte = 0x03;
-def ARG_SH_ASR: byte = 0x04;
+// addressing mode args
+def MASK_AM_ARG = 0xff0000;
+def SHIFT_AM_ARG: byte = 16;
+def ARG_NONE = 0x00;
 
-def makeOpcode(code: byte, am: byte, arg1: byte, arg2: byte) -> int {
-	return (int.view(code) << SHIFT_CODE) | (int.view(am) << SHIFT_AM)
-		 | (int.view(arg1) << SHIFT_ARG1) | (int.view(arg2) << SHIFT_ARG2);
-}
-
-def getCode(opcode: int) -> byte {
-	return byte.view((opcode & MASK_CODE) >> SHIFT_CODE);
-}
-
-def getAM(opcode: int) -> byte {
-	return byte.view((opcode & MASK_AM) >> SHIFT_AM);
-}
-
-def getArg1(opcode: int) -> byte {
-	return byte.view((opcode & MASK_ARG1) >> SHIFT_ARG1);
-}
-
-def getArg2(opcode: int) -> byte {
-	return byte.view((opcode & MASK_ARG2) >> SHIFT_ARG2);
-}
+// widths (the width of the type the instruction operates on)
+def MASK_WIDTH = 0xff000000;
+def SHIFT_WIDTH: byte = 24;
+def W_32 = 0x00;
+def W_64 = 0x01;
 
 // useful constants
 def MAX_IMM16_MOV = 0xffff;
 def MIN_IMM16_MOV = 0xffff0000;
 
-def MRegs: Arm64RegSet;
-def Regs: Arm64Regs;
+// XXX: Add to utils?
+type Maybe<T> {
+	case None;
+	case Some(t: T);
+}
+
+// The possible widths of immediates used in Arm64 instructions
+type ImmWidth {
+	case Imm12;
+	case Imm16;
+	case Imm19;
+}
+
+// Constructs an opcode from the 4 parts
+def makeOpcode(code: int, am: int, amArg: int, width: int) -> int {
+	return code | (am << SHIFT_AM) | (amArg << SHIFT_AM_ARG) | (width << SHIFT_WIDTH);
+}
+
+// Extracts the code section of the opcode
+def getCode(opcode: int) -> int {
+	return opcode & MASK_CODE;
+}
+
+// Inserts the code section of the opcode
+def putOpcode(opcode: int, code: int) -> int {
+	return opcode | code;
+}
+
+// Extracts the addressing mode argument section of the opcode
+def getAmArg(opcode: int) -> int {
+	return (opcode & MASK_AM_ARG) >> SHIFT_AM_ARG;
+}
+
+// Inserts the addressing mode argument section of the opcode
+def putAmArg(opcode: int, arg: int) -> int {
+	return (arg << SHIFT_AM_ARG) | opcode;
+}
+
+// Extracts the addressing mode section of the opcode
+def getAm(opcode: int) -> int {
+	return (opcode & MASK_AM) >> SHIFT_AM;
+}
+
+// Inserts the addressing mode section of the opcode
+def putAm(opcode: int, am: int) -> int {
+	return (am << SHIFT_AM) | opcode;
+}
+
+// Inserts the width section of the opcode
+def getWidth(opcode: int) -> int {
+	return (opcode & MASK_WIDTH) >> SHIFT_WIDTH;
+}
+
+// Extracts the width section of the opcode
+def putWidth(opcode: int, width: int) -> int {
+	return (width << SHIFT_WIDTH) | opcode;
+}
+
+// Gets width of instruction corresponding to RegClass
+def getRegClassWidth(rc: RegClass) -> int {
+	match (rc) {
+		I32, F32 => return W_32;
+		_ => return W_64;
+	}
+}
+
+def Regs: Arm64RegSet;
 def Conds: Arm64Conds; // TODO
 
 // Code generation for the Arm64 backend
 class SsaArm64Gen extends SsaMachGen {
-	def asm: Arm64Assembler;
+	def asm: Arm64Assembler; // TODO
 	def m = SsaInstrMatcher.new();
 	def dwarf: Dwarf; // What is this?
 
@@ -80,191 +119,99 @@ class SsaArm64Gen extends SsaMachGen {
 	def visitApply(block: SsaBlock, i: SsaApplyOp) {
 		match (i.op.opcode) {
 			IntAdd => {
-				emitIntBinop(I_ADDD, i);
+				emitIntBinop(I_ADD, i);
 			}
-			_ => unimplemented(); // TODO
+			_ => context.fail("not implemented"); // TODO
 		}
 	}
 
-	def visitThrow(block: SsaBlock, i: SsaThrow) { unimplemented(); }
-	def visitIf(block: SsaBlock, i: SsaIf) { unimplemented(); }
-	def visitSwitch(block: SsaBlock, i: SsaSwitch) { unimplemented(); }
-	def visitGoto(block: SsaBlock, target: SsaGoto) { unimplemented(); }
+	def visitThrow(block: SsaBlock, i: SsaThrow) { context.fail("not implemented"); }
+	def visitIf(block: SsaBlock, i: SsaIf) { context.fail("not implemented"); }
+	def visitSwitch(block: SsaBlock, i: SsaSwitch) { context.fail("not implemented"); }
+	def visitGoto(block: SsaBlock, target: SsaGoto) { context.fail("not implemented"); }
+
+	// Override Code Generation
+	def assemble(opcode: int, x: Array<Operand>) {
+		context.fail("not implemented");
+	}
 
 	// Regalloc callbacks to add moves
-	def genSaveLocal(reg: int, v: VReg) { unimplemented(); }
-	def genRestoreLocal(v: VReg, reg: int) { unimplemented(); }
+	def genSaveLocal(reg: int, v: VReg) { context.fail("not implemented"); }
+	def genRestoreLocal(v: VReg, reg: int) { context.fail("not implemented"); }
 
 	def genMoveLocLoc(src: (VReg, int), dst: (VReg, int), regClass: RegClass) {
-		unimplemented();
+		def width = getRegClassWidth(regClass);
+		def dstStack = regSet.isStack(dst.1), srcStack = regSet.isStack(src.1);
+
+		if (dstStack && srcStack) {
+			def opcode1 = makeOpcode(I_LDR, AM_REG, ARG_NONE, width);
+			emit2(opcode1, op(Operand.Def(null, Regs.SCRATCH_GPR)), op(Operand.Use(src)));	
+			def opcode2 = makeOpcode(I_STR, AM_REG, ARG_NONE, width);
+			emit2(opcode1, op(Operand.Def(dst)), op(Operand.Use(null, Regs.SCRATCH_GPR)));	
+		} else if (dstStack && !srcStack) {
+			def opcode = makeOpcode(I_STR, AM_REG, ARG_NONE, width);
+			emit2(opcode, op(Operand.Def(dst)), op(Operand.Use(src)));
+		} else if (!dstStack && srcStack) {
+			def opcode = makeOpcode(I_LDR, AM_REG, ARG_NONE, width);
+			emit2(opcode, op(Operand.Def(dst)), op(Operand.Use(src)));
+		} else {
+			def opcode = makeOpcode(I_MOVZ, AM_REG, ARG_NONE, width);
+			emit2(opcode, op(Operand.Def(dst)), op(Operand.Use(src)));
+		}
 	}
 
 	// Register allocation callback to prepend a move
 	def genMoveValLoc(src: VReg, dst: (VReg, int), regClass: RegClass) {
-		unimplemented();
-	}
+		def width = getRegClassWidth(regClass);
 
-	def assemble(opcode: int, a: Array<Operand>) {
-		if (opcode < 0) {
-			match (opcode) {
-				ArchInstrs.ARCH_ENTRY => {
-					var adjust = frameAdjust();
-					// allocate frame
-					if (adjust > 0) asm.subq_r_r_i_i(Regs.SP, Regs.SP, u12.view(adjust), 0);
+		if (regSet.isStack(dst.1)) {
+			// Only registers can be stored to memory
+			genMoveValLoc(src, (null, Regs.SCRATCH_GPR), regClass);
+			def opcode = makeOpcode(I_STR, AM_REG, ARG_NONE, width);
+			emit2(opcode, op(Operand.Def(dst)), op(Operand.Use(null, Regs.SCRATCH_GPR)));
+		} else {
+			def val = SsaConst.!(src.ssa).val;
+			match (val) {
+				x: Box<int> => {
+					// XXX Optimize
+					// Move first 16-bits to reg
+					def opcode1 = makeOpcode(I_MOVZ, AM_REG, ARG_NONE, W_32);
+					emit2(opcode1, op(Operand.Def(dst)), useImm(Int.box(x.val & 0xffff)));
+					// Move second 16-bits to reg
+					def opcode2 = makeOpcode(I_MOVK, AM_SHIFTED_IMM, 16, W_32);
+					emit2(opcode2, op(Operand.Def(dst)), useImm(Int.box((x.val & 0xffff0000) >> 16)));
 				}
-				ArchInstrs.ARCH_BLOCK => return; // TODO
-				ArchInstrs.ARCH_RET => {
-					var adjust = frameAdjust();
-					// deallocate frame
-					if (adjust > 0) asm.addq_r_r_i_i(Regs.SP, Regs.SP, u12.view(adjust), 0);
-					asm.ret();
-					return;
-				}
-				ArchInstrs.ARCH_BLOCK_END => return; //TODO
-				ArchInstrs.ARCH_END => return;
-				_ => unimplemented();
+				_ => context.fail("not implemented"); // TODO
 			}
-			return;
-		}
-
-		def am = getAM(opcode);
-		match (getAM(opcode)) {
-			AM_R_R_I_I => {
-				def imm = u12.view(toB32(toImm(a[2])));
-				def lsl12 = u1.view(getArg1(opcode));
-				assemble_r_r_i_i(toGpr(a[0]), toGpr(a[1]), imm, lsl12, opcode);
-			}
-			AM_R_R_R_SH_I => {
-				def sh = toRegShift(getArg1(opcode));
-				def imm = u6.view(getArg2(opcode));
-				assemble_r_r_r_sh_i(toGpr(a[0]), toGpr(a[1]), toGpr(a[2]), sh, imm, opcode);
-			}
-			_ => return context.fail1("unknown addressing mode %d", am);
 		}
 	}
 
-	def assemble_r_r_i_i(rd: Arm64Gpr, rn: Arm64Gpr, imm: u12, lsl12: u1, opcode: int) {
-		match (getCode(opcode)) {
-			I_ADDD => asm.addd_r_r_i_i(rd, rn, imm, lsl12);
-			I_ADDQ => asm.addq_r_r_i_i(rd, rn, imm, lsl12);
-			_ => invalidOpcode(opcode);
-		}
-	}
-	def assemble_r_r_r_sh_i(rd: Arm64Gpr, rn: Arm64Gpr, rm: Arm64Gpr, sh: RegShift, imm: u6, opcode: int) {
-		match (getCode(opcode)) {
-			I_ADDD => asm.addd_r_r_r_sh_i(rd, rn, rm, sh, u5.view(imm));
-			I_ADDQ => asm.addq_r_r_r_sh_i(rd, rn, rm, sh, imm);
-			_ => invalidOpcode(opcode);
-		}
-	}
-
-	def selectWidth(i: SsaApplyOp, code: byte) -> byte {
-		return if(intOpWidth(i) > 32, code + I_QD_DIFF, code);
-	}
-
-	def intOpWidth(i: SsaApplyOp) -> byte {
-		// XXX: factor this out and clean it up
-		var t = i.op.typeArgs[0];
-		if (IntType.?(t)) return IntType.!(t).width;
-		if (t.typeCon.kind == Kind.ENUM) return V3.getVariantTagType(t).width;
-		if (t.typeCon.kind == Kind.ENUM_SET) return V3.getEnumSetType(t).width;
-		return 64;
-	}
-
+	// Helper functions
 	// Emit code for an integer binop
-	def emitIntBinop(code: byte, i: SsaApplyOp) {
-		def width = intOpWidth(i);
-		emitSimpleBinop(selectWidth(i, code), i);
+	def emitIntBinop(code: int, i: SsaApplyOp) {
+		def width = getIntOpWidth(i);
+		emitSimpleBinop(code, width, i);
 	}
 
 	// Emit code for a simple binop (add, sub, mul, etc...)
-	def emitSimpleBinop(code: byte, i: SsaApplyOp) {
+	def emitSimpleBinop(code: int, width: int, i: SsaApplyOp) {
 		// XXX: select better left operand using liveness
 		m.intbinop(i);
-		dfnReg(i);
-		use(m.x);
-
-		var opcode: int;
-		if (tryUseImm32(m.y)) {
-			opcode = makeOpcode(code, AM_R_R_I_I, 0, ARG_NONE);
-		} else {
-			opcode = makeOpcode(code, AM_R_R_R_SH_I, ARG_SH_LSL, 0);
-			use(m.y);
-		}
-		emitN(opcode);
+		def opcode = makeOpcode(code, AM_REG, ARG_NONE, width);
+		emit3(opcode, dfnReg(i), use(m.x), use(m.y));
 	}
 
-	def tryUseImm32(i: SsaInstr) -> bool {
-		if (i == null) { useInt(0); return true; }
-		if (SsaConst.?(i)) {
-			var val = SsaConst.!(i).val;
-			match (val) {
-				null => { useImm(val); return true; }
-				x: Box<int> => { useImm(val); return true; }
-				x: Box<long> => if(x.val == int.view(x.val)) { useInt(int.view(x.val)); return true; }
-				x: Addr => { useImm(val); return true; }
-				x: Box<bool> => { useInt(if(x.val, 1, 0)); return true; }
-				x: ArrayRangeStart => { useImm(val); return true; }
-			}
-		}
-		return false;
-	}
+	// Returns the width for an integer operation
+	def getIntOpWidth(i: SsaApplyOp) -> int {
+		// XXX: factor this out and clean it up
+		def t = i.op.typeArgs[0];
+		var width: int;
 
-	def toLoc(o: Operand) -> int {
-		match (o) {
-			Overwrite(dst, src, assignment) => return assignment;
-			Def(vreg, assignment) => return assignment;
-			Use(vreg, assignment) => return assignment;
-			_ => return V3.fail("expected operand with assignment");
-		}
-	}
+		if (IntType.?(t)) width = IntType.!(t).width;
+		else if (t.typeCon.kind == V3Kind.ENUM) width = V3.getVariantTagType(t).width;
+		else if (t.typeCon.kind == V3Kind.ENUM_SET) width = V3.getEnumSetType(t).width;
+		else width = 64;
 
-	def toGpr(o: Operand) -> Arm64Gpr {
-		return loc_r(toLoc(o));
+		return if(width > 32, W_64, W_32);
 	}
-
-	def loc_r(loc: int) -> Arm64Gpr {
-		var gpr = MRegs.toGpr(loc);
-		if (gpr == null) return V3.fail1("expected GPR, got %s", regSet.identify(loc));
-		return gpr;
-	}
-
-	def toB32(val: Val) -> int {
-		var addr: Addr, b: int;
-		match (val) {
-			x: Box<int> 		=> b = x.val;
-			x: Box<long> 		=> b = int.view(x.val);
-			x: Box<bool> 		=> b = if(x.val, 1);
-			x: Float32Val 		=> b = int.view(x.bits);
-			x: Float64Val 		=> b = int.view(x.bits);
-			x: ArrayRangeStart 	=> b = x.start;
-			null 			=> b = 0;
-			_ => ;
-		}
-		return b;
-	}
-
-	def toRegShift(sh: byte) -> RegShift {
-		match (sh) {
-			ARG_SH_NONE => return RegShift.NONE;
-			ARG_SH_LSL => return RegShift.LSL;
-			ARG_SH_LSR => return RegShift.LSR;
-			ARG_SH_ASR => return RegShift.ASR;
-			_ => {
-				context.fail1("unknown reg shift %d", sh);
-				return RegShift.NONE;
-			}
-		}
-	}
-
-	def frameAdjust() -> int {
-		// assumes return address already pushed
-		return frame.size() - mach.code.addressSize;
-	}
-
-	def invalidOpcode(opcode: int) {
-		context.fail(Strings.format2("invalid opcode am=%x code=%x", getAM(opcode), getCode(opcode)));
-	}
-
-	def unimplemented() { context.fail("unimplemented"); }
 }
