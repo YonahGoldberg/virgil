@@ -202,18 +202,18 @@ class Arm64Assembler(w: DataWriter) {
 		emit((0x3E5 << 22) | (int.view(imm / 8) << 10) | (int.view(rn.regnum) << 5) | int.view(rt.regnum));
 	}
 	// literal loads are += 1 MB from PC. Offset = imm * 4 
-	def ldrliterald_r_i(rt: Arm64Reg, imm: i19) -> this {
+	def ldrliterald_r_i(rt: Arm64Gpr, imm: i19) -> this {
 		patchKind = Arm64PatchKind.REL_IMM19;
 		patchPos = w.pos;
 		emit((0xC << 24) | (int.view(imm) << 5) | int.view(rt.regnum));
 	}
-	def ldrliteralq_r_i(rt: Arm64Reg, imm: i19) -> this {
+	def ldrliteralq_r_i(rt: Arm64Gpr, imm: i19) -> this {
 		patchKind = Arm64PatchKind.REL_IMM19;
 		patchPos = w.pos;
 		emit((0x2C << 24) | (int.view(imm) << 5) | int.view(rt.regnum));
 	}
 	// shift == 4 if imm == 1 else 0
-	def ldrd_r_r_r_ex_i(rt: Arm64Reg, rn: Arm64Reg, rm: Arm64Reg, ex: MemRegExtend, imm: u1) -> this {
+	def ldrd_r_r_r_ex_i(rt: Arm64Gpr, rn: Arm64Gpr, rm: Arm64Gpr, ex: MemRegExtend, imm: u1) -> this {
 		emit((0x5C3 << 21) | (int.view(rm.regnum) << 16) | (int.view(ex.id) << 13) |
 			(int.view(imm) << 12) | (1 << 11) | (int.view(rn.regnum) << 5) | int.view(rt.regnum));
 	}
@@ -264,28 +264,28 @@ class Arm64Assembler(w: DataWriter) {
 	// ------------------------------------------------------------------------
 
 	// Move optionally shifted imm into reg, keeping other bits unchanged. rd <- imm << (lsl * 16)
-	def movkd_r_i_i(rd: Arm64Reg, imm: u16, lsl: u1) -> this {
+	def movkd_r_i_i(rd: Arm64Gpr, imm: u16, lsl: u1) -> this {
 		patchKind = Arm64PatchKind.ABS_IMM16;
 		patchPos = w.pos;
 		emit((0xE5 << 23) | (int.view(lsl) << 21) | (int.view(imm) << 5) | int.view(rd.regnum));
 	}
-	def movkq_r_i_i(rd: Arm64Reg, imm: u16, lsl: u2) -> this {
+	def movkq_r_i_i(rd: Arm64Gpr, imm: u16, lsl: u2) -> this {
 		patchKind = Arm64PatchKind.ABS_IMM16;
 		patchPos = w.pos;
 		emit((0x1E5 << 23) | (int.view(lsl) << 21) | (int.view(imm) << 5) | int.view(rd.regnum));
 	}
 
-	def movd_r_i(rd: Arm64Reg, imm: u16) -> this {
+	def movd_r_i(rd: Arm64Gpr, imm: u16) -> this {
 		patchKind = Arm64PatchKind.ABS_IMM16;
 		patchPos = w.pos;
 		emit_r_i(rd, imm, 0xA5);
 	}
-	def movq_r_i(rd: Arm64Reg, imm: u16) -> this {
+	def movq_r_i(rd: Arm64Gpr, imm: u16) -> this {
 		patchKind = Arm64PatchKind.ABS_IMM16;
 		patchPos = w.pos;
 		emit_r_i(rd, imm, 0x1A5);
 	}
-	def movd_r_r(rd: Arm64Reg, rm: Arm64Reg) -> this {
+	def movd_r_r(rd: Arm64Gpr, rm: Arm64Gpr) -> this {
 		emit_r_r_r_sh_i(rd, ones, rm, RegShift.LSL, 0, 0x2A);
 	}
 	def movq_r_r(rd: Arm64Gpr, rm: Arm64Gpr) -> this {
@@ -322,27 +322,6 @@ class Arm64Assembler(w: DataWriter) {
 	}
 	def addq_r_r_r_ex_i(rd: Arm64Gpr, rn: Arm64Gpr, rm: Arm64Gpr, ex: DataRegExtend, imm: u3) -> this {
 		emit_r_r_r_ex_i(rd, rn, rm, ex, imm, 0x8B);
-	}
-
-	def andd_r_r_r_sh_i(rd: Arm64Gpr, rn: Arm64Gpr, rm: Arm64Gpr, sh: RegShift, imm: u5) -> this {
-		emit_r_r_r_sh_i(rd, rn, rm, sh, imm, 0xA); 
-	}
-	def andq_r_r_r_sh_i(rd: Arm64Gpr, rn: Arm64Gpr, rm: Arm64Gpr, sh: RegShift, imm: u6) -> this {
-		emit_r_r_r_sh_i(rd, rn, rm, sh, imm, 0x8A); 
-	}
-
-	def orrd_r_r_r_sh_i(rd: Arm64Gpr, rn: Arm64Gpr, rm: Arm64Gpr, sh: RegShift, imm: u5) -> this {
-		emit_r_r_r_sh_i(rd, rn, rm, sh, imm, 0x2A); 
-	}
-	def orrq_r_r_r_sh_i(rd: Arm64Gpr, rn: Arm64Gpr, rm: Arm64Gpr, sh: RegShift, imm: u6) -> this {
-		emit_r_r_r_sh_i(rd, rn, rm, sh, imm, 0xAA); 
-	}
-
-	def eord_r_r_r_sh_i(rd: Arm64Gpr, rn: Arm64Gpr, rm: Arm64Gpr, sh: RegShift, imm: u5) -> this {
-		emit_r_r_r_sh_i(rd, rn, rm, sh, imm, 0x4A); 
-	}
-	def eorq_r_r_r_sh_i(rd: Arm64Gpr, rn: Arm64Gpr, rm: Arm64Gpr, sh: RegShift, imm: u6) -> this {
-		emit_r_r_r_sh_i(rd, rn, rm, sh, imm, 0xCA); 
 	}
 
 	def subd_r_r_i_i(rd: Arm64Gpr, rn: Arm64Gpr, imm: u12, lsl12: u1) -> this {
@@ -406,7 +385,7 @@ class Arm64Assembler(w: DataWriter) {
 
 	// ------------- Helper functions for emitting addressing modes  -----------
 
-	private def emit_r_i(rd: Arm64Reg, imm: u16, code: u9) {
+	private def emit_r_i(rd: Arm64Gpr, imm: u16, code: u9) {
 		emit((int.view(code) << 23) | (int.view(imm) << 5) | int.view(rd.regnum));	
 	}
 	// unfortunately, sometimes opcodes are u9
