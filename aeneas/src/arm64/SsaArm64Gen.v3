@@ -18,10 +18,7 @@ def SHIFT_ARG2: byte = 24;
 
 // codes
 def I_ADDD: byte = 0x01;	def I_ADDQ: byte = 0x11;
-def I_MOVZ: byte = 0x02;
-def I_MOVK: byte = 0x03;
-def I_LDR: byte = 0x04;
-def I_STR: byte = 0x05;
+def I_SUBD: byte = 0x02;	def I_SUBQ: byte = 0x12;
 
 def I_QD_DIFF: byte = I_ADDQ - I_ADDD;
 
@@ -37,6 +34,18 @@ def ARG_SH_NONE: byte = 0x01;
 def ARG_SH_LSL: byte = 0x02;
 def ARG_SH_LSR: byte = 0x03;
 def ARG_SH_ASR: byte = 0x04;
+def ARG_DATA_EX_UXTB: byte = 0x05;
+def ARG_DATA_EX_UXTH: byte = 0x06;
+def ARG_DATA_EX_UXTX: byte = 0x07;
+def ARG_DATA_EX_UXTW: byte = 0x08;
+def ARG_DATA_EX_SXTB: byte = 0x09;
+def ARG_DATA_EX_SXTH: byte = 0x0A;
+def ARG_DATA_EX_SXTW: byte = 0x0B;
+def ARG_DATA_EX_SXTX: byte = 0x0C;
+def ARG_MEM_EX_UXTW: byte = 0x0D;
+def ARG_MEM_EX_LSL: byte = 0x0E;
+def ARG_MEM_EX_SXTW: byte = 0x0F;
+def ARG_MEM_EX_SXTX: byte = 0x10;
 
 def makeOpcode(code: byte, am: byte, arg1: byte, arg2: byte) -> int {
 	return (int.view(code) << SHIFT_CODE) | (int.view(am) << SHIFT_AM)
@@ -63,6 +72,8 @@ def getArg2(opcode: int) -> byte {
 def MAX_IMM16_MOV = 0xffff;
 def MIN_IMM16_MOV = 0xffff0000;
 
+def MATCH_NEG = true;
+
 def MRegs: Arm64RegSet;
 def Regs: Arm64Regs;
 def Conds: Arm64Conds; // TODO
@@ -81,6 +92,11 @@ class SsaArm64Gen extends SsaMachGen {
 		match (i.op.opcode) {
 			IntAdd => {
 				emitIntBinop(I_ADDD, i);
+			}
+			IntSub => {
+				m.intbinop(i);
+				if (MATCH_NEG && m.xconst && m.xint == 0) return emit1(I_NEGQ | (AM_OP << AM_SHIFT), ovwReg(i, m.y));
+				emitIntBinop(I_SUBD, i);
 			}
 			_ => unimplemented(); // TODO
 		}
@@ -139,6 +155,11 @@ class SsaArm64Gen extends SsaMachGen {
 				def imm = u6.view(getArg2(opcode));
 				assemble_r_r_r_sh_i(toGpr(a[0]), toGpr(a[1]), toGpr(a[2]), sh, imm, opcode);
 			}
+			AM_R_R_R_EX_I => {
+				def ex = toDataRegExtend(getArg1(opcode));
+				def imm = u3.view(getArg2(opcode));
+				assemble_r_r_r_ex_i(toGpr(a[0]), toGpr(a[1]), toGpr(a[2]), ex, imm, opcode);
+			}
 			_ => return context.fail1("unknown addressing mode %d", am);
 		}
 	}
@@ -148,6 +169,9 @@ class SsaArm64Gen extends SsaMachGen {
 	def assemble_r_r_i_i(rd: Arm64Gpr, rn: Arm64Gpr, imm: u12, lsl12: u1, opcode: int) {
 		match (getCode(opcode)) {
 			I_ADDD => asm.addd_r_r_i_i(rd, rn, imm, lsl12);
+			I_SUBD => asm.subd_r_r_i_i(rd, rn, imm, lsl12);
+
+			I_SUBQ => asm.subq_r_r_i_i(rd, rn, imm, lsl12);
 			I_ADDQ => asm.addq_r_r_i_i(rd, rn, imm, lsl12);
 			_ => invalidOpcode(opcode);
 		}
@@ -155,7 +179,20 @@ class SsaArm64Gen extends SsaMachGen {
 	def assemble_r_r_r_sh_i(rd: Arm64Gpr, rn: Arm64Gpr, rm: Arm64Gpr, sh: RegShift, imm: u6, opcode: int) {
 		match (getCode(opcode)) {
 			I_ADDD => asm.addd_r_r_r_sh_i(rd, rn, rm, sh, u5.view(imm));
+			I_SUBD => asm.subd_r_r_r_sh_i(rd, rn, rm, sh, u5.view(imm));
+
 			I_ADDQ => asm.addq_r_r_r_sh_i(rd, rn, rm, sh, imm);
+			I_SUBQ => asm.subq_r_r_r_sh_i(rd, rn, rm, sh, imm);
+			_ => invalidOpcode(opcode);
+		}
+	}
+	def assemble_r_r_r_ex_i(rd: Arm64Gpr, rn: Arm64Gpr, rm: Arm64Gpr, ex: DataRegExtend, imm: u3, opcode: int) {
+		match (getCode(opcode)) {
+			I_ADDD => asm.addd_r_r_r_ex_i(rd, rn, rm, ex, imm);
+			I_SUBD => asm.addd_r_r_r_ex_i(rd, rn, rm, ex, imm);
+
+			I_ADDQ => asm.subq_r_r_r_ex_i(rd, rn, rm, ex, imm);
+			I_SUBQ => asm.addq_r_r_r_ex_i(rd, rn, rm, ex, imm);
 			_ => invalidOpcode(opcode);
 		}
 	}
@@ -258,7 +295,35 @@ class SsaArm64Gen extends SsaMachGen {
 			}
 		}
 	}
-	
+	def toDataRegExtend(ex: byte) -> DataRegExtend {
+		match (ex) {
+			ARG_DATA_EX_SXTB => return DataRegExtend.SXTB;
+			ARG_DATA_EX_SXTH => return DataRegExtend.SXTH;
+			ARG_DATA_EX_SXTW => return DataRegExtend.SXTW;
+			ARG_DATA_EX_SXTX => return DataRegExtend.SXTX;
+			ARG_DATA_EX_UXTB => return DataRegExtend.UXTB;
+			ARG_DATA_EX_UXTH => return DataRegExtend.UXTH;
+			ARG_DATA_EX_UXTW => return DataRegExtend.UXTW;
+			ARG_DATA_EX_UXTX => return DataRegExtend.UXTX;
+			_ => {
+				context.fail1("unknown data reg extend %d", ex);
+				return DataRegExtend.SXTB;
+			}
+		}
+	}
+	def toMemRegExtend(ex: byte) -> MemRegExtend {
+		match (ex) {
+			ARG_MEM_EX_UXTW => return MemRegExtend.UXTW;
+			ARG_MEM_EX_LSL => return MemRegExtend.LSL;
+			ARG_MEM_EX_SXTW => return MemRegExtend.SXTW;
+			ARG_MEM_EX_SXTX => return MemRegExtend.SXTX;
+			_ => {
+				context.fail1("unknown data mem extend %d", ex);
+				return MemRegExtend.LSL;
+			}
+		}
+	}
+
 	def frameAdjust() -> int {
 		// assumes return address already pushed
 		return frame.size() - mach.code.addressSize;
