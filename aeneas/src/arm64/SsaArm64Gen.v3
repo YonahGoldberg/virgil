@@ -95,7 +95,6 @@ class SsaArm64Gen extends SsaMachGen {
 			}
 			IntSub => {
 				m.intbinop(i);
-				if (MATCH_NEG && m.xconst && m.xint == 0) return emit1(I_NEGQ | (AM_OP << AM_SHIFT), ovwReg(i, m.y));
 				emitIntBinop(I_SUBD, i);
 			}
 			_ => unimplemented(); // TODO
@@ -162,6 +161,11 @@ class SsaArm64Gen extends SsaMachGen {
 			}
 			_ => return context.fail1("unknown addressing mode %d", am);
 		}
+	}
+
+	def getOutput() -> ArchInstrBuffer {
+		if (out != null) return out;
+		return out = Arm64InstrBuffer.new(this, context.prog, Arm64RegSet.SET);
 	}
 
 	// Helper functions
@@ -334,4 +338,66 @@ class SsaArm64Gen extends SsaMachGen {
 	}
 
 	def unimplemented() { context.fail("unimplemented"); }
+}
+
+class Arm64InstrBuffer extends ArchInstrBuffer {
+	new(codegen: SsaArm64Gen, prog: Program, regSet: MachRegSet) super(codegen, prog, regSet) { }
+	def putArchInstr(indent: int, i: ArchInstr) -> int {
+		def opcode = int.view(i.opcode()), a = i.operands;
+		var name: string, shift: string;
+		def arg1 = getArg1(opcode), arg2 = getArg2(opcode);
+
+		match (getCode(opcode)) {
+			I_ADDD => name = "addd";
+			I_ADDQ => name = "addq";
+			_ => {
+				return putSimpleInstr(indent, i);
+			}
+		}
+
+		match (getArg1(opcode)) {
+			ARG_SH_LSL => shift = "lsl";
+			ARG_SH_LSR => shift = "lsr";
+			ARG_SH_ASR => shift = "asr";
+			ARG_DATA_EX_UXTB => shift = "uxtb";
+			ARG_DATA_EX_UXTH => shift = "uxth";
+			ARG_DATA_EX_UXTW => shift = "uxtw";
+			ARG_DATA_EX_UXTX => shift = "uxtx";
+			ARG_DATA_EX_SXTB => shift = "sxtb";
+			ARG_DATA_EX_SXTH => shift = "sxth";
+			ARG_DATA_EX_SXTW => shift = "sxtw";
+			ARG_DATA_EX_SXTX => shift = "sxtx";
+		}
+
+		match (getAM(opcode)) {
+			AM_R_R_I_I => {
+				putIndent(indent);
+				puts(name);
+				sp();
+				putOperands(a);
+				csp();
+				puts("lsl");
+				sp();
+				putImm(Box<int>.new(if(arg1 == 1, 12, 0)));
+			}
+			AM_R_R_R_SH_I, AM_R_R_R_EX_I => {
+				putIndent(indent);
+				puts(name);
+				sp();
+				putOperands(a);
+				csp();
+				puts(shift);
+				sp();
+				putImm(Box<int>.new(arg2));
+			}
+			_ => {
+				putIndent(indent);
+				puts(name);
+				sp();
+				putOperands(a);
+			}
+		}
+
+		return indent;
+	}
 }

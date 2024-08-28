@@ -429,7 +429,6 @@ class Arm64Assembler(w: DataWriter) {
 	}
 
 	def asrd_r_r_i(rd: Arm64Gpr, rn: Arm64Gpr, imm: u5) -> this {
-		def imms: = 0b11111;
 		emit_r_r_i_i(ones, rn, imm, 0, 0x26);
 	}
 	def asrq_r_r_i(rd: Arm64Gpr, rn: Arm64Gpr, imm: u6) -> this {
