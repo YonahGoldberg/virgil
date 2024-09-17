@@ -25,7 +25,7 @@ def I_MOVD: byte = 0x05;	def I_MOVQ: byte = 0x15;
 def I_MULD: byte = 0x06;	def I_MULQ: byte = 0x16;
 def I_SDIVD: byte = 0x07;	def I_SDIVQ: byte = 0x17;
 def I_UDIVD: byte = 0x08;	def I_UDIVQ: byte = 0x18;
-def I_CALL: byte = 0x09;
+def I_BL: byte = 0x09;
 
 def I_QD_DIFF: byte = I_ADDQ - I_ADDD;
 
@@ -105,10 +105,11 @@ class SsaArm64Gen extends SsaMachGen {
 	def asm: Arm64Assembler;
 	def m = SsaInstrMatcher.new();
 	def dwarf: Dwarf;
+	def patcher: Arm64AddrPatcher;
 
 	var retLoc: VReg;
 
-	new(context: SsaContext, mach: MachProgram, asm, w: MachDataWriter, dwarf)
+	new(context: SsaContext, mach: MachProgram, asm, w: MachDataWriter, dwarf, patcher)
 	super(context, mach, Arm64RegSet.SET, w) {}
 
 	// ========================================
@@ -186,8 +187,8 @@ class SsaArm64Gen extends SsaMachGen {
 					// allocate frame
 					if (adjust > 0) {
 						// Save R0 (return addr) on stack
-						asm.strq_r_r_i(Regs.SP, Regs.R0, 0);
 						asm.subq_r_r_i_i(Regs.SP, Regs.SP, u12.view(adjust), 0);
+						asm.strq_r_r_i(Regs.R30, Regs.SP, 0);
 					}
 				}
 				ArchInstrs.ARCH_BLOCK => return; // TODO
@@ -196,7 +197,7 @@ class SsaArm64Gen extends SsaMachGen {
 					// deallocate frame
 					if (adjust > 0) {
 						// Restore R0 (return addr) from stack
-						asm.ldrq_r_r_i(Regs.SP, Regs.R0, 0);
+						asm.ldrq_r_r_i(Regs.R30, Regs.SP, 0);
 						asm.addq_r_r_i_i(Regs.SP, Regs.SP, u12.view(adjust), 0);
 					}
 					asm.ret();
@@ -240,6 +241,9 @@ class SsaArm64Gen extends SsaMachGen {
 				def imm = i9.view(loc_m(toLoc(a[1])));
 				assemble_r_r_i(Regs.SP, toGpr(a[0]), imm, opcode);	
 			}
+			AM_NONE => {
+				assemble_none(opcode, a);
+			}
 			_ => return context.fail1("unknown addressing mode %d", am);
 		}
 	}
@@ -250,6 +254,41 @@ class SsaArm64Gen extends SsaMachGen {
 	}
 
 	// Helper functions
+
+	def assemble_none(opcode: int, a: Array<Operand>) {
+		match (getCode(opcode)) {
+			I_BL => {
+				var target: bool, outgoing: MachCallConv, livepoint = -1;
+				for (o in a) {
+					match (o) {
+						Immediate(val) => {
+							asm.bl_i(patcher.REL_IMM26_MARKER);
+							patcher.record(Addr.!(val));
+							target = true;
+							break;
+						}
+						Use(vreg, assignment) => {
+							unimplemented();
+							target = true;
+							break;
+						}
+						RefMap(lp, o) => {
+							livepoint = lp;
+							outgoing = o;
+						}
+						_ => ;
+					}
+				}
+				if (!target) context.fail("no target for call");
+				if (livepoint >= 0 && mach.runtime.gc != null) {
+					var off = patcher.mw.offset();
+					var entry = buildStackMap(off, outgoing, livepoint);
+					if (entry >= 0) mach.runtime.gc.recordStackRefMap(off, getSource(a), entry);
+				}
+				recordReturnSource(a);
+			}
+		}
+	}
 
 	def assemble_r_r_i(rt: Arm64Gpr, rn: Arm64Gpr, imm: i9, opcode: int) {
 		match (getCode(opcode)) {
@@ -318,9 +357,13 @@ class SsaArm64Gen extends SsaMachGen {
 		}
 	}
 
+	def roundUpTo16(x: int) -> int {
+		return ((x + 15) & ~15);
+	}
+
 	def frameAdjust() -> int {
 		// Add space for return address
-		return frame.size() + mach.code.addressSize;
+		return roundUpTo16(frame.size() + mach.code.addressSize);
 	}
 
 	def selectWidth(i: SsaApplyOp, code: byte) -> byte {
@@ -393,7 +436,7 @@ class SsaArm64Gen extends SsaMachGen {
 			useFixed(inputs[i].dest, conv.calleeParam(i - 1));
 		}
 		useExSource(null, call.source);
-		emitN(I_CALL);
+		emitN(makeSimpleOpcode(I_BL, AM_NONE));
 	}
 
 	def tryUseImm(i: SsaInstr) -> bool {
@@ -526,6 +569,29 @@ class SsaArm64Gen extends SsaMachGen {
 		return if(regClass == RegClass.I32 || regClass == RegClass.F32, I_STRD, I_STRQ);
 	}
 
+	def recordReturnSource(a: Array<Operand>) {
+		if (rtsrc == null) return;
+		match (a[a.length - 1]) {
+			ExSource(ex, src) => rtsrc.recordReturnSource(patcher.mw.offset(), src);
+			_ => ;
+		}
+	}
+	def recordExSource(a: Array<Operand>) {
+		if (rtsrc == null) return;
+		if (a.length == 0) return;
+		match (a[a.length - 1]) {
+			ExSource(ex, src) => if (ex != null) rtsrc.recordSource(patcher.mw.offset(), src);
+			_ => ;
+		}
+	}
+	def getSource(a: Array<Operand>) -> Source {
+		if (a.length == 0) return null;
+		match (a[a.length - 1]) {
+			ExSource(ex, src) => return src;
+			_ => return null;
+		}
+	}
+
 	def invalidOpcode(opcode: int) {
 		context.fail(Strings.format2("invalid opcode am=%x code=%x", getAM(opcode), getCode(opcode)));
 	}
@@ -557,6 +623,7 @@ class Arm64InstrBuffer extends ArchInstrBuffer {
 			I_LDRQ => name = "ldrq";
 			I_STRD => name = "strd";
 			I_STRQ => name = "strq";
+			I_BL => name = "bl";
 			_ => {
 				return putSimpleInstr(indent, i);
 			}

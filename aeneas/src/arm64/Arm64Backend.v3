@@ -52,7 +52,7 @@ class Arm64Backend extends MachBackend {
 		}
 		asm = Arm64Assembler.new(w);
 		patcher = Arm64AddrPatcher.new(w, mach, asm);
-		codegen = SsaArm64Gen.new(context, mach, asm, w, dwarf);
+		codegen = SsaArm64Gen.new(context, mach, asm, w, dwarf, patcher);
 
 		if (compiler.useGlobalRegAllocMatcher != VstMatcher.None) allocateRegsGlobal = GlobalRegAlloc.new(MRegs.SET, codegen).allocate;
 		if (compiler.LocalRegAlloc) allocateRegs = LocalRegAlloc.new(MRegs.SET, codegen).allocate;

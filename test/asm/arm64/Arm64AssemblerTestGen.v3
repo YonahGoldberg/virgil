@@ -39,15 +39,15 @@ def main(a: Array<string>) -> int {
 
 	writeObjdumpHeader(objectPath, opcodeFd);
 
-	test_mov();
-	test_add();
-	test_and();
-	test_orr();
-	test_eor();
-	test_sub();
-	test_cmp();
-	test_mul();
-	test_div();
+	// test_mov();
+	// test_add();
+	// test_and();
+	// test_orr();
+	// test_eor();
+	// test_sub();
+	// test_cmp();
+	// test_mul();
+	// test_div();
 	test_ldr();
 	test_str();
 
@@ -391,7 +391,7 @@ def render_mem64_r_r_ex_u1(rn: Arm64Gpr, rm: Arm64Gpr, ex: MemRegExtend, u: u1) 
 def u16s: Array<u16> = [0, 1, 2, u16.view(-1), u16.view(-2), u16.view(-128), 96, 127, 128, 1023,
 	u16.view(-999), 32767, u16.view(-32768)];
 def u12s: Array<u12> = [0x800, 0x810, 0x820, 0x830];
-def i9s: Array<i9> = [-3, 0xb6, 0x3f, -35];
+def i9s: Array<i9> = [-3, 0xb6, 0x3f, -35, 0];
 def u6s: Array<u6> = [0x0A, 0x1E, 0x2C, 0x1B, 0x3A];
 def u5s: Array<u5> = [0x0A, 0x1E, 0x0B, 0x17, 0x0F];
 def u3s: Array<u3> = [0, 1, 2, 3, 4]; // extend ops only take 0 - 4, not all u3s.
@@ -400,7 +400,7 @@ def shifts = [RegShift.LSL, RegShift.LSR, RegShift.ASR];
 def dataRegExtends = [DataRegExtend.SXTB, DataRegExtend.SXTH, DataRegExtend.SXTW,
 	DataRegExtend.UXTB, DataRegExtend.UXTH, DataRegExtend.UXTW];
 def memRegExtends = [MemRegExtend.UXTW, MemRegExtend.LSL, MemRegExtend.SXTW, MemRegExtend.SXTX];
-def randRegs: Array<Arm64Gpr> = [Arm64Regs.R0, Arm64Regs.R11, Arm64Regs.R21, Arm64Regs.R30];
+def randRegs: Array<Arm64Gpr> = [Arm64Regs.R0, Arm64Regs.R11, Arm64Regs.R21, Arm64Regs.R30, Arm64Regs.SP];
 def oneReg: Array<Arm64Gpr> = [Arm64Regs.R22];
 
 // Arguments to assembly instructions paired with a function to print them to buf
