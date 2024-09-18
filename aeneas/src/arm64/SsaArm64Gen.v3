@@ -1,9 +1,6 @@
 // Copyright 2024 Virgil Authors. All rights reserved.
 // See LICENSE for details of Apache 2.0 license.
 
-// Arm64 instructions are ints that look like <arg2><arg1><am><code>
-// where each part of the instruction is a byte
-
 // masks
 def MASK_CODE = 0xff;
 def MASK_AM = 0xff00;
@@ -58,6 +55,12 @@ def ARG_MEM_EX_UXTW: byte = 0x0D;
 def ARG_MEM_EX_LSL: byte = 0x0E;
 def ARG_MEM_EX_SXTW: byte = 0x0F;
 def ARG_MEM_EX_SXTX: byte = 0x10;
+
+// ========================================
+// Opcode interface.
+// Arm64 opcodes are ints that look like <arg2><arg1><am><code>
+// where each part of the instruction is a byte
+// ========================================
 
 def makeOpcode(code: byte, am: byte, arg1: byte, arg2: byte) -> int {
 	return (int.view(code) << SHIFT_CODE) | (int.view(am) << SHIFT_AM)
@@ -124,15 +127,18 @@ class SsaArm64Gen extends SsaMachGen {
 	def visitSwitch(block: SsaBlock, i: SsaSwitch) { unimplemented(); }
 	def visitGoto(block: SsaBlock, target: SsaGoto) { unimplemented(); }
 
+	// Register allocation callback. Save a local variable onto the stack, loc -> v
 	def genSaveLocal(loc: int, v: VReg) {
 		if (regSet.isCallerStack(loc)) return; // defined by caller, nothing to do
 		genMoveLocLoc((null, loc), (v, v.spill), v.regClass);
 	}
 
+	// Register allocation callback. Restore a local variable from the stack, v -> loc
 	def genRestoreLocal(v: VReg, loc: int) {
 		genMoveLocLoc((v, v.spill), (null, loc), v.regClass);
 	}
 
+	// Register allocation callback.
 	def genMoveLocLoc(src: (VReg, int), dst: (VReg, int), regClass: RegClass) {
 		if (regSet.isStack(src.1) && regSet.isStack(dst.1)) {
 			def scratch_def = Operand.Def(null, MRegs.SCRATCH_GPR);
@@ -148,6 +154,7 @@ class SsaArm64Gen extends SsaMachGen {
 		}
 	}
 
+	// Register allocation callback.
 	def genMoveValLoc(src: VReg, dst: (VReg, int), regClass: RegClass) {
 		if (regSet.isStack(dst.1)) {
 			var scratch = MRegs.SCRATCH_GPR;
@@ -166,6 +173,7 @@ class SsaArm64Gen extends SsaMachGen {
 		}
 	}
 
+	// Assemble an arch instruction into assembly.
 	def assemble(opcode: int, a: Array<Operand>) {
 		if (opcode < 0) {
 			match (opcode) {
