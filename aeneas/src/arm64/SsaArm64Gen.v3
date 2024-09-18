@@ -135,7 +135,6 @@ class SsaArm64Gen extends SsaMachGen {
 	def visitSwitch(block: SsaBlock, i: SsaSwitch) { unimplemented(); }
 	def visitGoto(block: SsaBlock, target: SsaGoto) { unimplemented(); }
 
-	// Regalloc callbacks to add moves
 	def genSaveLocal(loc: int, v: VReg) {
 		if (regSet.isCallerStack(loc)) return; // defined by caller, nothing to do
 		genMoveLocLoc((null, loc), (v, v.spill), v.regClass);
@@ -160,7 +159,6 @@ class SsaArm64Gen extends SsaMachGen {
 		}
 	}
 
-	// Register allocation callback to prepend a move
 	def genMoveValLoc(src: VReg, dst: (VReg, int), regClass: RegClass) {
 		if (regSet.isStack(dst.1)) {
 			var scratch = MRegs.SCRATCH_GPR;
