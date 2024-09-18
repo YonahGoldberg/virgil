@@ -85,20 +85,9 @@ def getArg2(opcode: int) -> byte {
 	return byte.view((opcode & MASK_ARG2) >> SHIFT_ARG2);
 }
 
-// useful constants
-def MAX_IMM16_MOV = 0xffff;
-def MIN_IMM16_MOV = 0xffff0000;
-
-def MATCH_NEG = true;
-
 def MRegs: Arm64RegSet;
 def Regs: Arm64Regs;
 def Conds: Arm64Conds; // TODO
-
-type Maybe<T> {
-	case None;
-	case Some(t: T);
-}
 
 // Code generation for the Arm64 backend
 class SsaArm64Gen extends SsaMachGen {
@@ -251,7 +240,13 @@ class SsaArm64Gen extends SsaMachGen {
 		return out = Arm64InstrBuffer.new(this, context.prog, Arm64RegSet.SET);
 	}
 
-	// Helper functions
+	// ========================================
+	// Helper Functions
+	// ========================================
+
+	// ========================================
+	// Assembling Helpers
+	// ========================================	
 
 	def assemble_none(opcode: int, a: Array<Operand>) {
 		match (getCode(opcode)) {
@@ -355,27 +350,9 @@ class SsaArm64Gen extends SsaMachGen {
 		}
 	}
 
-	def roundUpTo16(x: int) -> int {
-		return ((x + 15) & ~15);
-	}
-
-	def frameAdjust() -> int {
-		// Add space for return address
-		return roundUpTo16(frame.size() + mach.code.addressSize);
-	}
-
-	def selectWidth(i: SsaApplyOp, code: byte) -> byte {
-		return if(intOpWidth(i) > 32, code + I_QD_DIFF, code);
-	}
-
-	def intOpWidth(i: SsaApplyOp) -> byte {
-		// XXX: factor this out and clean it up
-		var t = i.op.typeArgs[0];
-		if (IntType.?(t)) return IntType.!(t).width;
-		if (t.typeCon.kind == Kind.ENUM) return V3.getVariantTagType(t).width;
-		if (t.typeCon.kind == Kind.ENUM_SET) return V3.getEnumSetType(t).width;
-		return 64;
-	}
+	// ========================================
+	// Emit Helpers
+	// ========================================	
 
 	// Emit code for an integer binop
 	def emitIntBinop(code: byte, i: SsaApplyOp) {
@@ -435,6 +412,32 @@ class SsaArm64Gen extends SsaMachGen {
 		}
 		useExSource(null, call.source);
 		emitN(makeSimpleOpcode(I_BL, AM_NONE));
+	}
+
+	// ========================================
+	// Misc Helpers
+	// ========================================	
+
+	def roundUpTo16(x: int) -> int {
+		return ((x + 15) & ~15);
+	}
+
+	def frameAdjust() -> int {
+		// Add space for return address
+		return roundUpTo16(frame.size() + mach.code.addressSize);
+	}
+
+	def selectWidth(i: SsaApplyOp, code: byte) -> byte {
+		return if(intOpWidth(i) > 32, code + I_QD_DIFF, code);
+	}
+
+	def intOpWidth(i: SsaApplyOp) -> byte {
+		// XXX: factor this out and clean it up
+		var t = i.op.typeArgs[0];
+		if (IntType.?(t)) return IntType.!(t).width;
+		if (t.typeCon.kind == Kind.ENUM) return V3.getVariantTagType(t).width;
+		if (t.typeCon.kind == Kind.ENUM_SET) return V3.getEnumSetType(t).width;
+		return 64;
 	}
 
 	def tryUseImm(i: SsaInstr) -> bool {
