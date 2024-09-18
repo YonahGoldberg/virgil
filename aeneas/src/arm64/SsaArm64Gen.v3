@@ -203,7 +203,7 @@ class SsaArm64Gen extends SsaMachGen {
 			AM_R_R_R => assemble_r_r_r(toGpr(a[0]), toGpr(a[1]), toGpr(a[2]), opcode);
 			AM_R_R_I_I => {
 				def imm = u12.view(toB32(toImm(a[2])));
-				def	lsl12 = u1.view(getArg1(opcode));
+				def lsl12 = u1.view(getArg1(opcode));
 				assemble_r_r_i_i(toGpr(a[0]), toGpr(a[1]), imm, lsl12, opcode);
 			}
 			AM_R_R_R_SH_I => {
