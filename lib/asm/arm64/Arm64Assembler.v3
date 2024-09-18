@@ -179,7 +179,6 @@ class Arm64Assembler(w: DataWriter) {
 		emit((0x5C2 << 21) | (int.view(u9.view(imm)) << 12) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
 	}
 	def ldrq_r_r_i(rt: Arm64Gpr, rn: Arm64Gpr, imm: i9) -> this {
-		def x = (0x7C2 << 21) | (int.view(u9.view(imm)) << 12) | int.view(rn.regnum) << 5 | int.view(rt.regnum);
 		emit((0x7C2 << 21) | (int.view(u9.view(imm)) << 12) | int.view(rn.regnum) << 5 | int.view(rt.regnum));
 	}
 	def ldrpostd_r_r_i(rt: Arm64Gpr, rn: Arm64Gpr, imm: i9) -> this {
@@ -200,7 +199,6 @@ class Arm64Assembler(w: DataWriter) {
 	}
 	// imm but be a multiple of 8 for this variant
 	def ldrunsignedq_r_r_i(rt: Arm64Gpr, rn: Arm64Gpr, imm: u12) -> this {
-		System.puti((0x3E4 << 22) | (int.view(imm / 8) << 10) | (int.view(rn.regnum) << 5) | int.view(rt.regnum));
 		emit((0x3E4 << 22) | (int.view(imm / 8) << 10) | (int.view(rn.regnum) << 5) | int.view(rt.regnum));
 	}
 	// literal loads are += 1 MB from PC. Offset = imm * 4 
