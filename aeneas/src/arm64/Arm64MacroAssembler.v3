@@ -1,0 +1,58 @@
+// Copyright 2024 Virgil Authors. All rights reserved.
+// See LICENSE for details of Apache 2.0 license.
+
+class Arm64AddrPatcher {
+	def mw: MachDataWriter;
+	def asm: Arm64MacroAssembler;
+	def ABS_IMM16_MARKER: u16 = 0x3388;
+	def REL_IMM26_MARKER: u26 = 0xDD2341;
+
+	new(mw, asm) {}
+
+	def record(addr: Addr) {
+		mw.recordArm64Patch(addr, asm.patchKind, asm.patchPos);
+	}
+
+	def patch(kind: Arm64PatchKind, posAddr: int, absAddr: int) {
+		def pos = mw.pos;
+		match (kind) {
+			ABS_IMM16 => asm.patch_ABS_i16(pos, u16.view(absAddr));
+			REL_IMM26 => asm.patch_REL_i26(pos, i26.view((absAddr - posAddr) / 4));
+			_ => unknownPatchKind();
+		}
+	}
+
+	def unknownPatchKind() {
+		return V3.fail("Arm64AddrPatcher Encountered Unknown Patch Kind");
+	}
+}
+
+// Adds additional functionality to the base Arm64 assembler.
+// - Supports instructions with address operands.
+// - Supports instructions that emit multiple Arm instructions. For example,
+// data operations with immediates in Arm only allow small immediates. Here
+// we can support an addition with any sized immediate by casing on the size
+// and emitting multiple Arm64 instructions in some cases.
+class Arm64MacroAssembler extends Arm64Assembler {
+	def mw: MachDataWriter;
+	var patcher: Arm64AddrPatcher;
+
+	new(mw) super(mw) {
+		patcher = Arm64AddrPatcher.new(mw, this);
+	}
+
+	def bl_a(a: Addr) -> this {
+		bl_i(patcher.REL_IMM26_MARKER);
+		patcher.record(a);
+	}
+
+	// def movd_r_i(rd: Arm64Gpr, imm: u16) -> this {
+	// 	patchKind = Arm64PatchKind.ABS_IMM16;
+	// 	patchPos = w.pos;
+	// 	emit_r_i(rd, imm, 0xA5);
+	// }
+	// def movq_r_i(rd: Arm64Gpr, imm: u16) -> this {
+	// 	patchKind = Arm64PatchKind.ABS_IMM16;
+	// 	patchPos = w.pos;
+	// }
+}

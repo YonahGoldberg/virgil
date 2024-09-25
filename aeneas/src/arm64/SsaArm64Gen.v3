@@ -94,14 +94,13 @@ def Conds: Arm64Conds; // TODO
 
 // Code generation for the Arm64 backend
 class SsaArm64Gen extends SsaMachGen {
-	def asm: Arm64Assembler;
+	def asm: Arm64MacroAssembler;
 	def m = SsaInstrMatcher.new();
 	def dwarf: Dwarf;
-	def patcher: Arm64AddrPatcher;
 
 	var retLoc: VReg;
 
-	new(context: SsaContext, mach: MachProgram, asm, w: MachDataWriter, dwarf, patcher)
+	new(context: SsaContext, mach: MachProgram, asm, w: MachDataWriter, dwarf)
 	super(context, mach, Arm64RegSet.SET, w) {}
 
 	// ========================================
@@ -263,8 +262,7 @@ class SsaArm64Gen extends SsaMachGen {
 				for (o in a) {
 					match (o) {
 						Immediate(val) => {
-							asm.bl_i(patcher.REL_IMM26_MARKER);
-							patcher.record(Addr.!(val));
+							asm.bl_a(Addr.!(val));
 							target = true;
 							break;
 						}
@@ -282,7 +280,7 @@ class SsaArm64Gen extends SsaMachGen {
 				}
 				if (!target) context.fail("no target for call");
 				if (livepoint >= 0 && mach.runtime.gc != null) {
-					var off = patcher.mw.offset();
+					var off = asm.mw.offset();
 					var entry = buildStackMap(off, outgoing, livepoint);
 					if (entry >= 0) mach.runtime.gc.recordStackRefMap(off, getSource(a), entry);
 				}
@@ -448,14 +446,23 @@ class SsaArm64Gen extends SsaMachGen {
 		return 64;
 	}
 
-	def tryUseImm(i: SsaInstr) -> bool {
+	def tryUseImm<T>(i: SsaInstr, queryInt: int -> bool, queryLong: long -> bool) -> bool {
 		if (i == null) { useInt(0); return true; }
 		if (SsaConst.?(i)) {
 			var val = SsaConst.!(i).val;
 			match (val) {
 				null => { useImm(val); return true; }
-				x: Box<int> => { useImm(val); return true; }
+				x: Box<int> => { 
+					if (queryInt(x.val)) {
+						useImm(val);
+						return true;
+					}
+					return false;
+				}
 				x: Box<long> => {
+					if (queryLong(x.val)) {
+						
+					}
 					if (x.val == int.view(x.val)) {
 						useInt(int.view(x.val));
 					} else {
@@ -581,7 +588,7 @@ class SsaArm64Gen extends SsaMachGen {
 	def recordReturnSource(a: Array<Operand>) {
 		if (rtsrc == null) return;
 		match (a[a.length - 1]) {
-			ExSource(ex, src) => rtsrc.recordReturnSource(patcher.mw.offset(), src);
+			ExSource(ex, src) => rtsrc.recordReturnSource(asm.mw.offset(), src);
 			_ => ;
 		}
 	}
@@ -589,7 +596,7 @@ class SsaArm64Gen extends SsaMachGen {
 		if (rtsrc == null) return;
 		if (a.length == 0) return;
 		match (a[a.length - 1]) {
-			ExSource(ex, src) => if (ex != null) rtsrc.recordSource(patcher.mw.offset(), src);
+			ExSource(ex, src) => if (ex != null) rtsrc.recordSource(asm.mw.offset(), src);
 			_ => ;
 		}
 	}

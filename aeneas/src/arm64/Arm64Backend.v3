@@ -26,8 +26,7 @@ component Arm64Common {
 // TODO: negative object headers
 class Arm64Backend extends MachBackend {
 	def test: bool;
-	var patcher: Arm64AddrPatcher;
-	var asm: Arm64Assembler;
+	var asm: Arm64MacroAssembler;
 	var codegen: SsaArm64Gen;
 	var allocateRegs: void -> void;
 	var allocateRegsGlobal: void -> void;
@@ -50,9 +49,8 @@ class Arm64Backend extends MachBackend {
 			objReg = Arm64Regs.R0;
 			sizeReg = Arm64Regs.R0;
 		}
-		asm = Arm64Assembler.new(w);
-		patcher = Arm64AddrPatcher.new(w, mach, asm);
-		codegen = SsaArm64Gen.new(context, mach, asm, w, dwarf, patcher);
+		asm = Arm64MacroAssembler.new(w);
+		codegen = SsaArm64Gen.new(context, mach, asm, w, dwarf);
 
 		if (compiler.useGlobalRegAllocMatcher != VstMatcher.None) allocateRegsGlobal = GlobalRegAlloc.new(MRegs.SET, codegen).allocate;
 		if (compiler.LocalRegAlloc) allocateRegs = LocalRegAlloc.new(MRegs.SET, codegen).allocate;
@@ -67,8 +65,8 @@ class Arm64Backend extends MachBackend {
 		genTestInputs(main, frame);
 
 		def mainAddr = mach.addrOfMethod(main);
-		asm.bl_i(patcher.REL_IMM26_MARKER);
-		patcher.record(mainAddr);
+		asm.bl_i(asm.patcher.REL_IMM26_MARKER);
+		asm.patcher.record(mainAddr);
 
 		// write return value to stdout if this is a test
 		genTestOutput(main, frame);
@@ -102,7 +100,7 @@ class Arm64Backend extends MachBackend {
 				.putx(abs)
 				.outln();
 		}
-		patcher.patch(kind, posAddr, abs);
+		asm.patcher.patch(kind, posAddr, abs);
 	}
 
 	def genSignalHandlerStub() {
@@ -164,11 +162,11 @@ class Arm64Backend extends MachBackend {
 			def tableHigh16 = Addr.new(mach.codeRegion, null, 0);
 
 			// Move low 16 bits of table addr
-			asm.movd_r_i(Regs.R9, patcher.ABS_IMM16_MARKER);
-			patcher.record(tableLow16);
+			asm.movd_r_i(Regs.R9, asm.patcher.ABS_IMM16_MARKER);
+			asm.patcher.record(tableLow16);
 			// Move high 16 bits of table addr
-			asm.movkd_r_i_i(Regs.R9, patcher.ABS_IMM16_MARKER, 1);
-			patcher.record(tableHigh16);
+			asm.movkd_r_i_i(Regs.R9, asm.patcher.ABS_IMM16_MARKER, 1);
+			asm.patcher.record(tableHigh16);
 
 			if (dest == null) {
 				// destination is a stack location
@@ -185,8 +183,8 @@ class Arm64Backend extends MachBackend {
 
 			// Jump over the table
 			def endAddr = Addr.new(mach.codeRegion, null, 0);
-			asm.b_i(patcher.REL_IMM26_MARKER);
-			patcher.record(endAddr);
+			asm.b_i(asm.patcher.REL_IMM26_MARKER);
+			asm.patcher.record(endAddr);
 			// Now we know the start address of the table
 			def tableAddr = w.posAddr() - 4; // argc = 1 adjustment
 			tableLow16.absolute = tableAddr & 0x0000FFFF;
