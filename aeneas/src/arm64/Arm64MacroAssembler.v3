@@ -6,8 +6,8 @@ def Regs: Arm64Regs;
 class Arm64AddrPatcher {
 	def mw: MachDataWriter;
 	def asm: Arm64MacroAssembler;
-	def ABS_IMM16_MARKER: u16 = 0x3388;
-	def REL_IMM26_MARKER: u26 = 0xDD2341;
+	def ABS_IMM16_MARKER: i16 = 0x3388;
+	def REL_IMM26_MARKER: i26 = 0xDD2341;
 
 	new(mw, asm) {}
 
@@ -18,8 +18,17 @@ class Arm64AddrPatcher {
 	def patch(kind: Arm64PatchKind, posAddr: int, absAddr: int) {
 		def pos = mw.pos;
 		match (kind) {
-			ABS_IMM16 => asm.patch_ABS_i16(pos, u16.view(absAddr));
-			REL_IMM26 => asm.patch_REL_i26(pos, i26.view((absAddr - posAddr) / 4));
+			ABS_IMM16 => {
+				if (!i16.?(absAddr))
+					return V3.fail("Arm64AddrPatcher failed patch of kind ABS_IMM16 because the address overflows i16");
+				asm.patch_ABS_i16(pos, i16.!(absAddr));
+			}
+			REL_IMM26 => {
+				var relAddr = (absAddr - posAddr) / 4;
+				if (!i26.?(relAddr))
+					return V3.fail("Arm64AddrPatcher failed patch of kind REL_IMM26 because the address overflows i26");
+				asm.patch_REL_i26(pos, i26.!((absAddr - posAddr) / 4));
+			}
 			_ => unknownPatchKind();
 		}
 	}
@@ -44,26 +53,31 @@ class Arm64MacroAssembler extends Arm64Assembler {
 	}
 
 	def bl_a(a: Addr) -> this {
-		bl_i(patcher.REL_IMM26_MARKER);
+		bl_i26(patcher.REL_IMM26_MARKER);
+		patcher.record(a);
+	}
+
+	def b_a(a: Addr) -> this {
+		b_i26(patcher.REL_IMM26_MARKER);
 		patcher.record(a);
 	}
 
 	def movd_r_a_a(rd: Arm64Gpr, low16: Addr, high16: Addr) -> this {
-		asm.movd_r_i16(rd, asm.patcher.ABS_IMM16_MARKER);
-		asm.patcher.record(low16);
+		movd_r_i16(rd, patcher.ABS_IMM16_MARKER);
+		patcher.record(low16);
 		// Move high 16 bits of table addr
-		asm.movkd_r_i16_u1(rd, asm.patcher.ABS_IMM16_MARKER, 1);
-		asm.patcher.record(high16);
+		movkd_r_i16_u1(rd, patcher.ABS_IMM16_MARKER, 1);
+		patcher.record(high16);
 	}
 
 	def movd_r_i32(rd: Arm64Gpr, imm: int) -> this {
 		if (short.?(imm)) {
 			movd_r_i16(rd, short.!(imm));
 		} else {
-			low16 = imm & 0xFF;
-			high16 = (imm & 0xFF00) >> 16;
+			var low16 = imm & 0xFF;
+			var high16 = (imm & 0xFF00) >> 16;
 			movd_r_i16(rd, short.!(low16));
-			movkd_r_i16(rd, short.!(high16));
+			movkd_r_i16_u1(rd, short.!(high16), 1);
 		}
 	}
 
@@ -71,22 +85,22 @@ class Arm64MacroAssembler extends Arm64Assembler {
 		if (short.?(imm)) {
 			movd_r_i16(rd, short.!(imm));
 		} else if (int.?(imm)) {
-			low16 = imm & 0xFF;
-			high16 = (imm & 0xFF00) >> 16;
+			var low16 = imm & 0xFF;
+			var high16 = (imm & 0xFF00) >> 16;
 			movd_r_i16(rd, short.!(low16));
 			movkd_r_i16_u1(rd, short.!(high16), 1);
 		} else if (i48.?(imm)) {
-			low16 = imm & 0xFF;
-			mid16 = (imm & 0xFF00) >> 16;
-			high16 = (imm & 0xFF0000) >> 32;
+			var low16 = imm & 0xFF;
+			var mid16 = (imm & 0xFF00) >> 16;
+			var high16 = (imm & 0xFF0000) >> 32;
 			movd_r_i16(rd, short.!(low16));
 			movkd_r_i16_u1(rd, short.!(mid16), 1);
 			movkq_r_i16_u2(rd, short.!(mid16), 2);	
 		} else {
-			low16 = imm & 0xFF;
-			midLow16 = (imm & 0xFF00) >> 16;
-			midHigh16 = (imm & 0xFF0000) >> 32;
-			high16 = (imm & 0xFF000000) >> 48;
+			var low16 = imm & 0xFF;
+			var midLow16 = (imm & 0xFF00) >> 16;
+			var midHigh16 = (imm & 0xFF0000) >> 32;
+			var high16 = (imm & 0xFF000000) >> 48;
 			movd_r_i16(rd, short.!(low16));
 			movkd_r_i16_u1(rd, short.!(midLow16), 1);
 			movkq_r_i16_u2(rd, short.!(midHigh16), 2);	
@@ -97,64 +111,64 @@ class Arm64MacroAssembler extends Arm64Assembler {
 	def addd_r_r_i32_u1(rd: Arm64Gpr, rn: Arm64Gpr, imm: int, lsl12: u1) -> this {
 		if (i12.?(imm)) addd_r_r_i12_u1(rd, rn, i12.!(imm), lsl12);
 		else {
-			movd_r_i32(Regs.IP1, imm);
-			addd_r_r_r_sh_u5(rd, rn, Regs.IP1, RegShift.LSL, 0);
+			movd_r_i32(Regs.R17, imm);
+			addd_r_r_r_sh_u5(rd, rn, Regs.R17, RegShift.LSL, 0);
 		}
 	}
 
 	def addq_r_r_i64_u1(rd: Arm64Gpr, rn: Arm64Gpr, imm: long, lsl12: u1) -> this {
 		if (i12.?(imm)) addq_r_r_i12_u1(rd, rn, i12.!(imm), lsl12);
 		else {
-			movq_r_i64(Regs.IP1, imm);
-			addq_r_r_r_sh_u6(rd, rn, Regs.IP1, RegShift.LSL, 0);
+			movq_r_i64(Regs.R17, imm);
+			addq_r_r_r_sh_u6(rd, rn, Regs.R17, RegShift.LSL, 0);
 		}
 	}
 
 	def subd_r_r_i32_u1(rd: Arm64Gpr, rn: Arm64Gpr, imm: int, lsl12: u1) -> this {
 		if (i12.?(imm)) subd_r_r_i12_u1(rd, rn, i12.!(imm), lsl12);
 		else {
-			movd_r_i32(Regs.IP1, imm);
-			subd_r_r_r_sh_u5(rd, rn, Regs.IP1, RegShift.LSL, 0);
+			movd_r_i32(Regs.R17, imm);
+			subd_r_r_r_sh_u5(rd, rn, Regs.R17, RegShift.LSL, 0);
 		}
 	}
 
 	def subq_r_r_i64_u1(rd: Arm64Gpr, rn: Arm64Gpr, imm: long, lsl12: u1) -> this {
 		if (i12.?(imm)) subq_r_r_i12_u1(rd, rn, i12.!(imm), lsl12);
 		else {
-			movq_r_i64(Regs.IP1, imm);
-			subq_r_r_r_sh_u6(rd, rn, Regs.IP1, RegShift.LSL, 0);
+			movq_r_i64(Regs.R17, imm);
+			subq_r_r_r_sh_u6(rd, rn, Regs.R17, RegShift.LSL, 0);
 		}
 	}
 
 	def ldrd_r_r_i32(rt: Arm64Gpr, rn: Arm64Gpr, imm: int) -> this {
 		if (i9.?(imm)) ldrd_r_r_i9(rt, rn, i9.!(imm));
 		else {
-			movd_r_i32(Regs.IP1, imm);
-			ldrd_r_r_r_ex_i(rt, rn, Regs.IP1, MemRegExtend.LSL, 0);
+			movd_r_i32(Regs.R17, imm);
+			ldrd_r_r_r_ex_u1(rt, rn, Regs.R17, MemRegExtend.LSL, 0);
 		}
 	}
 
 	def ldrq_r_r_i32(rt: Arm64Gpr, rn: Arm64Gpr, imm: int) -> this {
 		if (i9.?(imm)) ldrq_r_r_i9(rt, rn, i9.!(imm));
 		else {
-			movd_r_i64(Regs.IP1, imm);
-			ldrq_r_r_r_ex_i(rt, rn, Regs.IP1, MemRegExtend.LSL, 0);
+			movd_r_i32(Regs.R17, imm);
+			ldrq_r_r_r_ex_u1(rt, rn, Regs.R17, MemRegExtend.LSL, 0);
 		}
 	}
 
 	def strd_r_r_i32(rt: Arm64Gpr, rn: Arm64Gpr, imm: int) -> this {
 		if (i9.?(imm)) strd_r_r_i9(rt, rn, i9.!(imm));
 		else {
-			movq_r_i32(Regs.IP1, imm);
-			strd_r_r_r_ex_i(rt, rn, Regs.IP1, MemRegExtend.LSL, 0);
+			movd_r_i32(Regs.R17, imm);
+			strd_r_r_r_ex_u1(rt, rn, Regs.R17, MemRegExtend.LSL, 0);
 		}
 	}
 
 	def strq_r_r_i32(rt: Arm64Gpr, rn: Arm64Gpr, imm: int) -> this {
 		if (i9.?(imm)) strq_r_r_i9(rt, rn, i9.!(imm));
 		else {
-			movd_r_i64(Regs.IP1, imm);
-			strq_r_r_r_ex_i(rt, rn, Regs.IP1, MemRegExtend.LSL, 0);
+			movd_r_i32(Regs.R17, imm);
+			strq_r_r_r_ex_u1(rt, rn, Regs.R17, MemRegExtend.LSL, 0);
 		}
 	}
 }

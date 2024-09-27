@@ -65,12 +65,9 @@ class Arm64Backend extends MachBackend {
 		genTestInputs(main, frame);
 
 		def mainAddr = mach.addrOfMethod(main);
-		asm.bl_i(asm.patcher.REL_IMM26_MARKER);
-		asm.patcher.record(mainAddr);
-
+		asm.bl_a(mainAddr);
 		// write return value to stdout if this is a test
 		genTestOutput(main, frame);
-
 		// Exit successfully
 		asm_exit_code(0);
 	}
@@ -145,7 +142,7 @@ class Arm64Backend extends MachBackend {
 		if (conv.overflow > 0) {
 			// allocate space for overflow arguments
 			def overflowSpace = conv.overflow * mach.data.addressSize;
-			asm.subq_r_r_i32_u1(Regs.SP, Regs.SP, overflowSpace, 0);
+			asm.subd_r_r_i32_u1(Regs.SP, Regs.SP, overflowSpace, 0);
 		}
 
 		def vals = mach.runtime.parseTestInputs(prog, prog.ERROR, params.length - 1);
@@ -163,14 +160,14 @@ class Arm64Backend extends MachBackend {
 
 			if (dest == null) {
 				// destination is a stack location
-				def scratchReg = MRegs.toGpr(MRegs.SCRATCH_GPR);
+				def scratchReg = MRegs.toGpr(MRegs.IP0);
 				def offset = mach.data.addressSize * (loc - frame.conv.regSet.callerStart);
 				// table value is at tableAddr + argc * 4
-				asm.ldrd_r_r_r_ex_u3(scratchReg, Regs.R9, Regs.R8, MemRegExtend.LSL, 1);
+				asm.ldrd_r_r_r_ex_u1(scratchReg, Regs.R9, Regs.R8, MemRegExtend.LSL, 1);
 				// Store table value on stack
 				asm.strd_r_r_i32(scratchReg, Regs.SP, offset);
 			} else {
-				asm.ldrd_r_r_r_ex_u3(dest, Regs.R9, Regs.R8, MemRegExtend.LSL, 1);
+				asm.ldrd_r_r_r_ex_u1(dest, Regs.R9, Regs.R8, MemRegExtend.LSL, 1);
 			}
 
 			// Jump over the table

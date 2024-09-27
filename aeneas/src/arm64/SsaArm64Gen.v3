@@ -31,15 +31,15 @@ def I_QD_DIFF: byte = I_ADDQ - I_ADDD;
 def AM_NONE: byte = 0x00;
 def AM_R_R_I12_U1: byte = 0x01;
 def AM_R_R_R_SH_U5: byte = 0x02;
-def AM_R_R_R_SH_U6: byte = 0x02;
-def AM_R_R_R_EX_U3: byte = 0x03;
-def AM_R_I16: byte = 0x04;
-def AM_R_I16_u1: byte = 0x05;
-def AM_R_I16_u2: byte = 0x06;
-def AM_R_R: byte = 0x07;
-def AM_R_R_R: byte = 0x08;
-def AM_M_R: byte = 0x09;
-def AM_R_M: byte = 0x0A;
+def AM_R_R_R_SH_U6: byte = 0x03;
+def AM_R_R_R_EX_U3: byte = 0x04;
+def AM_R_I16: byte = 0x05;
+def AM_R_I16_U1: byte = 0x06;
+def AM_R_I16_U2: byte = 0x07;
+def AM_R_R: byte = 0x08;
+def AM_R_R_R: byte = 0x09;
+def AM_M_R: byte = 0x0A;
+def AM_R_M: byte = 0x0B;
 
 // arguments
 def ARG_NONE: byte = 0x00;
@@ -188,8 +188,8 @@ class SsaArm64Gen extends SsaMachGen {
 	// Register allocation callback.
 	def genMoveLocLoc(src: (VReg, int), dst: (VReg, int), regClass: RegClass) {
 		if (regSet.isStack(src.1) && regSet.isStack(dst.1)) {
-			def scratch_def = Operand.Def(null, MRegs.IPO);
-			def scratch_use = Operand.Use(null, MRegs.IPO);
+			def scratch_def = Operand.Def(null, MRegs.IP0);
+			def scratch_use = Operand.Use(null, MRegs.IP0);
 			emit2(makeSimpleOpcode(selectRCWidth(regClass, I_LDRD), AM_R_M), op(scratch_def), usev(src));
 			emit2(makeSimpleOpcode(selectRCWidth(regClass, I_STRD), AM_M_R), dfnv(dst), op(scratch_use));
 		} else if (regSet.isStack(src.1)) {
@@ -204,7 +204,7 @@ class SsaArm64Gen extends SsaMachGen {
 	// Register allocation callback.
 	def genMoveValLoc(src: VReg, dst: (VReg, int), regClass: RegClass) {
 		if (regSet.isStack(dst.1)) {
-			var scratch = MRegs.IPO;
+			var scratch = MRegs.IP0;
 			genMoveValLoc(src, (null, scratch), regClass);
 			genMoveLocLoc((null, scratch), dst, regClass);
 		} else {
@@ -213,13 +213,12 @@ class SsaArm64Gen extends SsaMachGen {
 			// on the immediate size and possibly emit multiple moves.
 			if (tryUseFixedInt<short>(src.ssa)) {
 				var imm = popLastOperand();
-				return emit2(makeSimpleOpcode(I_MOVD, AM_R_I), dfnv(dst), op(imm));
+				return emit2(makeSimpleOpcode(I_MOVD, AM_R_I16), dfnv(dst), op(imm));
 			}
 			if (tryUseFixedInt<int>(src.ssa)) {
 				var val = Box<int>.!(Operand.Immediate.!(popLastOperand()).val).val;
 				var low16 = val & 0xFF;
 				var high16 = (val & 0xFF00) >> 16;
-				moveLow16(val);
 				emit2(makeSimpleOpcode(I_MOVD, AM_R_I16), dfnv(dst), useFixedInt<short, int>(low16));
 				return emit2(makeOpcode(I_MOVKD, AM_R_I16_U1, 1, ARG_NONE), dfnv(dst), useFixedInt<short, int>(high16));
 			}
@@ -255,7 +254,7 @@ class SsaArm64Gen extends SsaMachGen {
 					// allocate frame
 					if (adjust > 0) {
 						// Save R0 (return addr) on stack
-						asm.subd_r_r_i32_u1(Regs.SP, Regs.SP, adjust, 0);
+						asm.subq_r_r_i64_u1(Regs.SP, Regs.SP, adjust, 0);
 						asm.strq_r_r_i9(Regs.R30, Regs.SP, 0);
 					}
 				}
@@ -266,7 +265,7 @@ class SsaArm64Gen extends SsaMachGen {
 					if (adjust > 0) {
 						// Restore R0 (return addr) from stack
 						asm.ldrq_r_r_i9(Regs.R30, Regs.SP, 0);
-						asm.addq_r_r_i32_u1(Regs.SP, Regs.SP, adjust, 0);
+						asm.addq_r_r_i64_u1(Regs.SP, Regs.SP, adjust, 0);
 					}
 					asm.ret();
 					return;
@@ -283,7 +282,7 @@ class SsaArm64Gen extends SsaMachGen {
 			AM_R_R => assemble_r_r(toGpr(a[0]), toGpr(a[1]), opcode);
 			AM_R_R_R => assemble_r_r_r(toGpr(a[0]), toGpr(a[1]), toGpr(a[2]), opcode);
 			AM_R_R_I12_U1 => {
-				assemble_r_r_i12_u1(toGpr(a[0]), toGpr(a[1]), toFixedInt<i12>(imm),
+				assemble_r_r_i12_u1(toGpr(a[0]), toGpr(a[1]), toFixedInt<i12>(a[2]),
 					u1.!(getArg1(opcode)), opcode);
 			}
 			AM_R_R_R_SH_U5 => {
@@ -299,10 +298,10 @@ class SsaArm64Gen extends SsaMachGen {
 					toDataRegExtend(getArg1(opcode)), u3.!(getArg2(opcode)), opcode);
 			}
 			AM_R_I16 => assemble_r_i16(toGpr(a[0]), toFixedInt<i16>(a[1]), opcode);
-			AM_R_I16_u1 => assemble_r_i16_u1(toGpr(a[0]), toFixedInt<i16>(a[1]),
-				u1.!(getArg1(opcode)));
-			AM_R_I16_u2 => assemble_r_i16_u1(toGpr(a[0]), toFixedInt<i16>(a[1]),
-				u2.!(getArg1(opcode)));
+			AM_R_I16_U1 => assemble_r_i16_u1(toGpr(a[0]), toFixedInt<i16>(a[1]),
+				u1.!(getArg1(opcode)), opcode);
+			AM_R_I16_U2 => assemble_r_i16_u2(toGpr(a[0]), toFixedInt<i16>(a[1]),
+				u2.!(getArg1(opcode)), opcode);
 			AM_M_R => assemble_r_r_i32(toGpr(a[1]), Regs.SP, toRspOffset(a[0]), opcode);
 			AM_R_M => assemble_r_r_i32(toGpr(a[0]), Regs.SP, toRspOffset(a[1]), opcode);	
 			AM_NONE => assemble_none(opcode, a);
@@ -376,8 +375,8 @@ class SsaArm64Gen extends SsaMachGen {
 	}
 	def assemble_r_i16(rd: Arm64Gpr, imm: i16, opcode: int) {
 		match (getCode(opcode)) {
-			I_MOVD => asm.movd_r_i(rd, imm);
-			I_MOVQ => asm.movq_r_i(rd, imm);
+			I_MOVD => asm.movd_r_i16(rd, imm);
+			I_MOVQ => asm.movq_r_i16(rd, imm);
 			_ => invalidOpcode(opcode);
 		}
 	}
@@ -402,18 +401,18 @@ class SsaArm64Gen extends SsaMachGen {
 	}
 	def assemble_r_r_i12_u1(rd: Arm64Gpr, rn: Arm64Gpr, imm: i12, lsl12: u1, opcode: int) {
 		match (getCode(opcode)) {
-			I_ADDD => asm.addd_r_r_i_i(rd, rn, imm, lsl12);
-			I_SUBD => asm.subd_r_r_i_i(rd, rn, imm, lsl12);
+			I_ADDD => asm.addd_r_r_i12_u1(rd, rn, imm, lsl12);
+			I_SUBD => asm.subd_r_r_i12_u1(rd, rn, imm, lsl12);
 
-			I_SUBQ => asm.subq_r_r_i_i(rd, rn, imm, lsl12);
-			I_ADDQ => asm.addq_r_r_i_i(rd, rn, imm, lsl12);
+			I_SUBQ => asm.subq_r_r_i12_u1(rd, rn, imm, lsl12);
+			I_ADDQ => asm.addq_r_r_i12_u1(rd, rn, imm, lsl12);
 			_ => invalidOpcode(opcode);
 		}
 	}
 	def assemble_r_r_r_sh_u5(rd: Arm64Gpr, rn: Arm64Gpr, rm: Arm64Gpr, sh: RegShift, imm: u5, opcode: int) {
 		match (getCode(opcode)) {
-			I_ADDD => asm.addd_r_r_r_sh_i(rd, rn, rm, sh, imm);
-			I_SUBD => asm.subd_r_r_r_sh_i(rd, rn, rm, sh, imm);
+			I_ADDD => asm.addd_r_r_r_sh_u5(rd, rn, rm, sh, imm);
+			I_SUBD => asm.subd_r_r_r_sh_u5(rd, rn, rm, sh, imm);
 			_ => invalidOpcode(opcode);
 		}
 	}
@@ -452,9 +451,10 @@ class SsaArm64Gen extends SsaMachGen {
 
 		var opcode: int;
 		if (tryUseFixedInt<i12>(m.y)) {
-			opcode = makeOpcode(code, AM_R_R_I_I, 0, ARG_NONE);
+			opcode = makeOpcode(code, AM_R_R_I12_U1, 0, ARG_NONE);
 		} else {
-			opcode = makeOpcode(code, AM_R_R_R_SH_I, ARG_SH_LSL, 0);
+			var AM = if(intOpWidth(i) > 32, AM_R_R_R_SH_U6, AM_R_R_R_SH_U5);
+			opcode = makeOpcode(code, AM, ARG_SH_LSL, 0);
 			useReg(m.y);
 		}
 		emitN(opcode);
@@ -692,7 +692,7 @@ class Arm64InstrBuffer extends ArchInstrBuffer {
 		}
 
 		match (getAM(opcode)) {
-			AM_R_R_I_I => {
+			AM_R_R_I12_U1 => {
 				putIndent(indent);
 				puts(name);
 				sp();
@@ -702,7 +702,7 @@ class Arm64InstrBuffer extends ArchInstrBuffer {
 				sp();
 				putImm(Box<int>.new(if(arg1 == 1, 12, 0)));
 			}
-			AM_R_R_R_SH_I, AM_R_R_R_EX_I => {
+			AM_R_R_R_SH_U5, AM_R_R_R_SH_U6, AM_R_R_R_EX_U3 => {
 				putIndent(indent);
 				puts(name);
 				sp();
