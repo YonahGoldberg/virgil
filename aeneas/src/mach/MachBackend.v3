@@ -1229,13 +1229,28 @@ class ArchInstrBuffer(codegen: SsaMachGen, prog: Program, regSet: MachRegSet) ex
 	def putConstraint(constraint: int) -> this {
 		if (constraint != 0) putc(':').yellow().puts(regSet.identify(constraint)).end();
 	}
+	def putImmConstraint(val: Val) -> this {
+		putc(':');
+		match (val) {
+			x: Box<int> => yellow().puts("int");
+			x: Box<i12> => yellow().puts("i12");
+			x: Box<short> => yellow().puts("short");
+			x: Box<u1> => yellow().puts("u1");
+			x: Box<u2> => yellow().puts("u2");
+			x: Box<u3> => yellow().puts("u3");
+			x: Box<u4> => yellow().puts("u4");
+			x: Box<u5> => yellow().puts("u5");
+			x: Box<u6> => yellow().puts("u6");
+			x: Box<long> => yellow().puts("long");
+		}
+	}
 	def putVReg(mode: string, vreg: VReg) -> this {
 		blue().puts(mode).end();
 		if (vreg != null && vreg.ssa != null) putSsa(vreg.ssa);
 		if (vreg != null) putc('v').putd(vreg.varNum);
 	}
 	def putImm(val: Val) -> this {
-		blue().puts("imm").puthashv(val, null).end();
+		puthashv(val, null).putImmConstraint(val).end();
 	}
 	def putOperand(o: Operand) -> this {
 		match (o) {

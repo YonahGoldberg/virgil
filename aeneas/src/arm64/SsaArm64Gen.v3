@@ -677,7 +677,7 @@ class Arm64InstrBuffer extends ArchInstrBuffer {
 			}
 		}
 
-		match (getArg1(opcode)) {
+		match (arg1) {
 			ARG_SH_LSL => shift = "lsl";
 			ARG_SH_LSR => shift = "lsr";
 			ARG_SH_ASR => shift = "asr";
@@ -702,7 +702,7 @@ class Arm64InstrBuffer extends ArchInstrBuffer {
 				sp();
 				putImm(Box<int>.new(if(arg1 == 1, 12, 0)));
 			}
-			AM_R_R_R_SH_U5, AM_R_R_R_SH_U6, AM_R_R_R_EX_U3 => {
+			AM_R_R_R_SH_U5 => {
 				putIndent(indent);
 				puts(name);
 				sp();
@@ -710,7 +710,27 @@ class Arm64InstrBuffer extends ArchInstrBuffer {
 				csp();
 				puts(shift);
 				sp();
-				putImm(Box<int>.new(arg2));
+				putImm(Box<u5>.new(u5.!(arg2)));
+			}
+			AM_R_R_R_SH_U6=> {
+				putIndent(indent);
+				puts(name);
+				sp();
+				putOperands(a);
+				csp();
+				puts(shift);
+				sp();
+				putImm(Box<u6>.new(u6.!(arg2)));
+			}
+			AM_R_R_R_EX_U3 => {
+				putIndent(indent);
+				puts(name);
+				sp();
+				putOperands(a);
+				csp();
+				puts(shift);
+				sp();
+				putImm(Box<u3>.new(u3.!(arg2)));
 			}
 			_ => {
 				putIndent(indent);
