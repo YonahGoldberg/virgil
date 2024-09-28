@@ -70,24 +70,19 @@ def makeOpcode(code: byte, am: byte, arg1: byte, arg2: byte) -> int {
 	return (int.view(code) << SHIFT_CODE) | (int.view(am) << SHIFT_AM)
 		 | (int.view(arg1) << SHIFT_ARG1) | (int.view(arg2) << SHIFT_ARG2);
 }
-
 def makeSimpleOpcode(code: byte, am: byte) -> int {
 	return (int.view(code) << SHIFT_CODE) | (int.view(am) << SHIFT_AM)
 		 | (int.view(ARG_NONE) << SHIFT_ARG1) | (int.view(ARG_NONE) << SHIFT_ARG2);
 }
-
 def getCode(opcode: int) -> byte {
 	return byte.view((opcode & MASK_CODE) >> SHIFT_CODE);
 }
-
 def getAM(opcode: int) -> byte {
 	return byte.view((opcode & MASK_AM) >> SHIFT_AM);
 }
-
 def getArg1(opcode: int) -> byte {
 	return byte.view((opcode & MASK_ARG1) >> SHIFT_ARG1);
 }
-
 def getArg2(opcode: int) -> byte {
 	return byte.view((opcode & MASK_ARG2) >> SHIFT_ARG2);
 }
@@ -111,13 +106,11 @@ class SsaArm64Gen extends SsaMachGen {
 	// Overidden Architecture Specific Routines
 	// ========================================
 
-
 	// Given an integer x of type iW, use an immediate of type iN to represent it.
 	// Precondition: x can be represented as an iN
 	def useFixedInt<N, W>(x: W) {
 		op(Operand.Immediate(Box<N>.new(N.!(x))));
 	}
-
 	// Try to use an immediate T for SSA instruction I. Arm64 has weird immediate sizes for
 	// some instructions, so T can be any width integer. If i fits in an integer of size T,
 	// use an integer operand with Box<T> and return true. Otherwise, return false.
@@ -150,11 +143,9 @@ class SsaArm64Gen extends SsaMachGen {
 		}
 		return false;
 	}
-
 	def toFixedInt<N>(o: Operand) -> N {
 		return Box<N>.!(toImm(o)).val;
 	}
-
 	def visitApply(block: SsaBlock, i: SsaApplyOp) {
 		match (i.op.opcode) {
 			IntAdd => emitIntBinop(I_ADDD, i);
@@ -168,23 +159,19 @@ class SsaArm64Gen extends SsaMachGen {
 			_ => return context.fail1("unexpected opcode %s", i.op.opcode.name);
 		}
 	}
-
 	def visitThrow(block: SsaBlock, i: SsaThrow) { unimplemented(); }
 	def visitIf(block: SsaBlock, i: SsaIf) { unimplemented(); }
 	def visitSwitch(block: SsaBlock, i: SsaSwitch) { unimplemented(); }
 	def visitGoto(block: SsaBlock, target: SsaGoto) { unimplemented(); }
-
 	// Register allocation callback. Save a local variable onto the stack, loc -> v
 	def genSaveLocal(loc: int, v: VReg) {
 		if (regSet.isCallerStack(loc)) return; // defined by caller, nothing to do
 		genMoveLocLoc((null, loc), (v, v.spill), v.regClass);
 	}
-
 	// Register allocation callback. Restore a local variable from the stack, v -> loc
 	def genRestoreLocal(v: VReg, loc: int) {
 		genMoveLocLoc((v, v.spill), (null, loc), v.regClass);
 	}
-
 	// Register allocation callback.
 	def genMoveLocLoc(src: (VReg, int), dst: (VReg, int), regClass: RegClass) {
 		if (regSet.isStack(src.1) && regSet.isStack(dst.1)) {
@@ -200,7 +187,6 @@ class SsaArm64Gen extends SsaMachGen {
 			emit2(makeSimpleOpcode(selectRCWidth(regClass, I_MOVD), AM_R_R), dfnv(dst), usev(src));
 		}
 	}
-
 	// Register allocation callback.
 	def genMoveValLoc(src: VReg, dst: (VReg, int), regClass: RegClass) {
 		if (regSet.isStack(dst.1)) {
@@ -244,7 +230,6 @@ class SsaArm64Gen extends SsaMachGen {
 			}
 		}
 	}
-
 	// Assemble an arch instruction into assembly.
 	def assemble(opcode: int, a: Array<Operand>) {
 		if (opcode < 0) {
@@ -308,7 +293,6 @@ class SsaArm64Gen extends SsaMachGen {
 			_ => return context.fail1("unknown addressing mode %d", am);
 		}
 	}
-
 	def getOutput() -> ArchInstrBuffer {
 		if (out != null) return out;
 		return out = Arm64InstrBuffer.new(this, context.prog, Arm64RegSet.SET);
@@ -442,7 +426,6 @@ class SsaArm64Gen extends SsaMachGen {
 	def emitIntBinop(code: byte, i: SsaApplyOp) {
 		emitSimpleBinop(selectWidth(i, code), i, m.intbinop(i));
 	}
-
 	// Emit code for a simple binop (add, sub, mul, etc...)
 	def emitSimpleBinop(code: byte, i: SsaApplyOp, unused: int) {
 		// XXX: select better left operand using liveness
@@ -459,7 +442,6 @@ class SsaArm64Gen extends SsaMachGen {
 		}
 		emitN(opcode);
 	}
-
 	def emitIntDiv(i: SsaApplyOp) {
 		var it = IntType.!(i.op.typeArgs[0]);
 		dfnReg(i);
@@ -468,7 +450,6 @@ class SsaArm64Gen extends SsaMachGen {
 		if (it.signed) emitN(makeSimpleOpcode(selectWidth(i, I_SDIVD), AM_R_R_R));
 		else emitN(makeSimpleOpcode(selectWidth(i, I_UDIVD), AM_R_R_R));
 	}
-
 	def emitCall(call: SsaApplyOp, funcRep: Mach_FuncRep) {
 		var func = call.input0(), mi: MachInstr;
 		var conv = frame.allocCallerSpace(Arm64VirgilCallConv.getForFunc(mach, funcRep));
@@ -506,20 +487,16 @@ class SsaArm64Gen extends SsaMachGen {
 	def roundUpTo16(x: int) -> int {
 		return ((x + 15) & ~15);
 	}
-
 	def frameAdjust() -> int {
 		// Add space for return address
 		return roundUpTo16(frame.size() + mach.code.addressSize);
 	}
-
 	def selectWidth(i: SsaApplyOp, code: byte) -> byte {
 		return if(intOpWidth(i) > 32, code + I_QD_DIFF, code);
 	}
-
 	def selectRCWidth(regClass: RegClass, code: byte) -> byte {
 		return if(regClass == RegClass.I32 || regClass == RegClass.F32, code, code + I_QD_DIFF);
 	}
-
 	def intOpWidth(i: SsaApplyOp) -> byte {
 		// XXX: factor this out and clean it up
 		var t = i.op.typeArgs[0];
@@ -528,9 +505,6 @@ class SsaArm64Gen extends SsaMachGen {
 		if (t.typeCon.kind == Kind.ENUM_SET) return V3.getEnumSetType(t).width;
 		return 64;
 	}
-
-
-
 	def toLoc(o: Operand) -> int {
 		match (o) {
 			Overwrite(dst, src, assignment) => return assignment;
@@ -539,21 +513,17 @@ class SsaArm64Gen extends SsaMachGen {
 			_ => return V3.fail("expected operand with assignment");
 		}
 	}
-
 	def toGpr(o: Operand) -> Arm64Gpr {
 		return loc_r(toLoc(o));
 	}
-
 	def toRspOffset(o: Operand) -> int {
 		return loc_m(toLoc(o));
 	}
-
 	def loc_r(loc: int) -> Arm64Gpr {
 		var gpr = MRegs.toGpr(loc);
 		if (gpr == null) return V3.fail1("expected GPR, got %s", regSet.identify(loc));
 		return gpr;
 	}
-	
 	// Returns a (positive) offset from RSP for the location of this `loc`.
 	def loc_m(loc: int) -> int {
 		loc = frame.un64(loc);
@@ -569,7 +539,6 @@ class SsaArm64Gen extends SsaMachGen {
 		}
 		return offset;
 	}
-
 	def toRegShift(sh: byte) -> RegShift {
 		match (sh) {
 			ARG_SH_NONE => return RegShift.NONE;
@@ -610,13 +579,11 @@ class SsaArm64Gen extends SsaMachGen {
 			}
 		}
 	}
-
 	def popLastOperand() -> Operand { // XXX: clean up uses of this
 		var o = operands[operands.length - 1];
 		operands.resize(operands.length - 1);
 		return o;
 	}
-
 	def recordReturnSource(a: Array<Operand>) {
 		if (rtsrc == null) return;
 		match (a[a.length - 1]) {
@@ -639,11 +606,9 @@ class SsaArm64Gen extends SsaMachGen {
 			_ => return null;
 		}
 	}
-
 	def invalidOpcode(opcode: int) {
 		context.fail(Strings.format2("invalid opcode am=%x code=%x", getAM(opcode), getCode(opcode)));
 	}
-
 	def unimplemented() { context.fail("unimplemented"); }
 }
 

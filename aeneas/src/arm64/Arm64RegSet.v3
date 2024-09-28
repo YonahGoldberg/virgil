@@ -76,7 +76,6 @@ component Arm64RegSet {
 		(RegClass.F32, ALL),
 		(RegClass.F64, ALL)
 	]);
-
 	def SET = MachRegSet.new(physRegs, regSets, regNames, regClasses, [],
 		CALLER_SPILL_START, CALLEE_SPILL_START);
 
@@ -89,7 +88,6 @@ component Arm64RegSet {
 		regNames[loc] = name;
 		return loc;
 	}
-
 	// Creates a register set
 	// name - the name of the set
 	// a - the set of registers
@@ -99,14 +97,12 @@ component Arm64RegSet {
 		regNames[loc] = name;
 		return loc;
 	}
-
 	// maps (RegClass, byte) -> RegClass by setting each RegClass tag to byte value
 	private def mapRegClasses(v: Array<(RegClass, byte)>) -> Array<byte> {
 		def result = Array<byte>.new(5); // XXX: number of reg classes
 		for (t in v) result[t.0.tag] = t.1;
 		return result;
 	}
-
 	def toGpr(loc: int) -> Arm64Gpr {
 		def rel = loc - R0;
 		return if(u32.view(rel) < locToGprArr.length, locToGprArr[rel]);
@@ -132,7 +128,6 @@ component Arm64VirgilCallConv {
 		if (pspill > rspill) rspill = pspill;
 		return MachCallConv.new(R.SET, paramTypes, ploc, returnTypes, rloc, rspill);
 	}
-
 	// Allocates function type arguments to physical locations
 	// types - argument types
 	// gpr - param registers to choose from
@@ -157,11 +152,9 @@ component Arm64VirgilCallConv {
 		}
 		return (loc, pspill);
 	}
-
 	def getForGraph(mach: MachProgram, graph: SsaGraph) -> MachCallConv { // XXX: put Signature in SsaGraph
 		return compute(mach, Arrays.map(graph.params, SsaParam.vtype), Tuple.toTypeArray(graph.returnType));
 	}
-
 	def getForFunc(mach: MachProgram, funcRep: Mach_FuncRep) -> MachCallConv {
 		if (funcRep.callConv != null) return funcRep.callConv;
 		return funcRep.callConv = compute(mach, funcRep.paramTypes, funcRep.returnTypes);
