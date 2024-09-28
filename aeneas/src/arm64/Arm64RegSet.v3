@@ -55,6 +55,12 @@ component Arm64RegSet {
 		R20, R21, R22, R23, R24, R25, R26, R27, R28, R29]);
 
 
+	/* Why are there two scratch registers? Problem: What if I want to move an imm 
+	 * to scratch and then scratch to mem. When I move scratch to mem, the mem might be
+	 * assigned some stack offset. What if that stack offset overflows i9? Then I can't use
+	 * str_r_r_i9 and I need to use the register offset addressing mode. So I need a second
+	 * scratch register to move the offset into.
+	 */
 	def SCRATCH1 = R16;
 	def SCRATCH2 = R17;
 
