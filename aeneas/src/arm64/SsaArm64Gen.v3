@@ -188,8 +188,8 @@ class SsaArm64Gen extends SsaMachGen {
 	// Register allocation callback.
 	def genMoveLocLoc(src: (VReg, int), dst: (VReg, int), regClass: RegClass) {
 		if (regSet.isStack(src.1) && regSet.isStack(dst.1)) {
-			def scratch_def = Operand.Def(null, MRegs.IP0);
-			def scratch_use = Operand.Use(null, MRegs.IP0);
+			def scratch_def = Operand.Def(null, MRegs.SCRATCH1);
+			def scratch_use = Operand.Use(null, MRegs.SCRATCH1);
 			emit2(makeSimpleOpcode(selectRCWidth(regClass, I_LDRD), AM_R_M), op(scratch_def), usev(src));
 			emit2(makeSimpleOpcode(selectRCWidth(regClass, I_STRD), AM_M_R), dfnv(dst), op(scratch_use));
 		} else if (regSet.isStack(src.1)) {
@@ -204,7 +204,7 @@ class SsaArm64Gen extends SsaMachGen {
 	// Register allocation callback.
 	def genMoveValLoc(src: VReg, dst: (VReg, int), regClass: RegClass) {
 		if (regSet.isStack(dst.1)) {
-			var scratch = MRegs.IP0;
+			var scratch = MRegs.SCRATCH1;
 			genMoveValLoc(src, (null, scratch), regClass);
 			genMoveLocLoc((null, scratch), dst, regClass);
 		} else {

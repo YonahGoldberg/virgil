@@ -55,8 +55,8 @@ component Arm64RegSet {
 		R20, R21, R22, R23, R24, R25, R26, R27, R28, R29]);
 
 
-	def IP0 = R16;
-	def IP1 = R17;
+	def SCRATCH1 = R16;
+	def SCRATCH2 = R17;
 
 	// enough spill slots to not use the 31st bit TODO
 	def CALLER_SPILL_START = 100000000;

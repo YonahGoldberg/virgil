@@ -1250,6 +1250,7 @@ class ArchInstrBuffer(codegen: SsaMachGen, prog: Program, regSet: MachRegSet) ex
 		if (vreg != null) putc('v').putd(vreg.varNum);
 	}
 	def putImm(val: Val) -> this {
+		blue().puts("imm");
 		puthashv(val, null).putImmConstraint(val).end();
 	}
 	def putOperand(o: Operand) -> this {

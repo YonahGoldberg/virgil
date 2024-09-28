@@ -160,7 +160,7 @@ class Arm64Backend extends MachBackend {
 
 			if (dest == null) {
 				// destination is a stack location
-				def scratchReg = MRegs.toGpr(MRegs.IP0);
+				def scratchReg = MRegs.toGpr(MRegs.SCRATCH1);
 				def offset = mach.data.addressSize * (loc - frame.conv.regSet.callerStart);
 				// table value is at tableAddr + argc * 4
 				asm.ldrd_r_r_r_ex_u1(scratchReg, Regs.R9, Regs.R8, MemRegExtend.LSL, 1);
